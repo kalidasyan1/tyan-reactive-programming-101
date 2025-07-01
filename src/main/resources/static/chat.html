@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reactive Chat Client</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .chat-container {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .messages {
+            height: 400px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 10px;
+            margin-bottom: 20px;
+            background-color: #fafafa;
+        }
+        .message {
+            margin-bottom: 10px;
+            padding: 8px;
+            border-radius: 5px;
+        }
+        .message.chat {
+            background-color: #e3f2fd;
+            border-left: 4px solid #2196f3;
+        }
+        .message.system {
+            background-color: #f3e5f5;
+            border-left: 4px solid #9c27b0;
+            font-style: italic;
+        }
+        .message.private {
+            background-color: #fff3e0;
+            border-left: 4px solid #ff9800;
+        }
+        .message.presence {
+            background-color: #e8f5e8;
+            border-left: 4px solid #4caf50;
+            font-size: 0.9em;
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        input, button, select {
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        input[type="text"] {
+            flex: 1;
+        }
+        button {
+            background-color: #2196f3;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #1976d2;
+        }
+        .status {
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+            text-align: center;
+        }
+        .status.connected {
+            background-color: #c8e6c9;
+            color: #2e7d32;
+        }
+        .status.disconnected {
+            background-color: #ffcdd2;
+            color: #c62828;
+        }
+    </style>
+</head>
+<body>
+    <div class="chat-container">
+        <h1>🚀 Reactive Chat Application</h1>
+
+        <div id="status" class="status disconnected">Disconnected</div>
+
+        <div class="controls">
+            <input type="text" id="userId" placeholder="Your username" value="user1">
+            <button onclick="connect()">Connect</button>
+            <button onclick="disconnect()">Disconnect</button>
+        </div>
+
+        <div class="controls">
+            <input type="text" id="roomId" placeholder="Room name" value="general">
+            <button onclick="joinRoom()">Join Room</button>
+        </div>
+
+        <div class="controls">
+            <select id="messageType">
+                <option value="chat">Public Message</option>
+                <option value="private">Private Message</option>
+            </select>
+            <input type="text" id="targetUser" placeholder="Target user (for private)" style="display:none;">
+            <input type="text" id="messageInput" placeholder="Type your message...">
+            <button onclick="sendMessage()">Send</button>
+        </div>
+
+        <div id="messages" class="messages"></div>
+
+        <div>
+            <h3>📖 Instructions:</h3>
+            <ol>
+                <li>Enter a username and click "Connect"</li>
+                <li>Join a room (e.g., "general", "tech", "random")</li>
+                <li>Send public messages or private messages to other users</li>
+                <li>Open multiple browser tabs to simulate multiple users</li>
+                <li>Watch real-time message delivery and user presence updates</li>
+            </ol>
+        </div>
+    </div>
+
+    <script>
+        let websocket = null;
+        let userId = '';
+
+        // Update message type selector
+        document.getElementById('messageType').addEventListener('change', function() {
+            const isPrivate = this.value === 'private';
+            document.getElementById('targetUser').style.display = isPrivate ? 'inline' : 'none';
+        });
+
+        // Allow Enter key to send messages
+        document.getElementById('messageInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        function connect() {
+            userId = document.getElementById('userId').value.trim();
+            if (!userId) {
+                alert('Please enter a username');
+                return;
+            }
+
+            const wsUrl = `ws://localhost:8082/chat?userId=${encodeURIComponent(userId)}`;
+            websocket = new WebSocket(wsUrl);
+
+            websocket.onopen = function() {
+                updateStatus('Connected', true);
+                addMessage('system', 'system', 'Connected to chat server', new Date());
+            };
+
+            websocket.onmessage = function(event) {
+                try {
+                    const message = JSON.parse(event.data);
+                    addMessage(message.type, message.sender, message.content, new Date(message.timestamp));
+                } catch (e) {
+                    console.error('Error parsing message:', e);
+                }
+            };
+
+            websocket.onclose = function() {
+                updateStatus('Disconnected', false);
+                addMessage('system', 'system', 'Disconnected from chat server', new Date());
+            };
+
+            websocket.onerror = function(error) {
+                console.error('WebSocket error:', error);
+                addMessage('system', 'system', 'Connection error occurred', new Date());
+            };
+        }
+
+        function disconnect() {
+            if (websocket) {
+                websocket.close();
+                websocket = null;
+            }
+        }
+
+        function joinRoom() {
+            const roomId = document.getElementById('roomId').value.trim();
+            if (!roomId || !websocket) {
+                alert('Please enter a room name and ensure you are connected');
+                return;
+            }
+
+            const message = {
+                type: 'join_room',
+                content: roomId
+            };
+
+            websocket.send(JSON.stringify(message));
+        }
+
+        function sendMessage() {
+            const messageInput = document.getElementById('messageInput');
+            const messageType = document.getElementById('messageType').value;
+            const content = messageInput.value.trim();
+
+            if (!content || !websocket) {
+                return;
+            }
+
+            const message = {
+                type: messageType,
+                content: content
+            };
+
+            if (messageType === 'private') {
+                const targetUser = document.getElementById('targetUser').value.trim();
+                if (!targetUser) {
+                    alert('Please enter a target username for private messages');
+                    return;
+                }
+                message.target = targetUser;
+            }
+
+            websocket.send(JSON.stringify(message));
+            messageInput.value = '';
+        }
+
+        function addMessage(type, sender, content, timestamp) {
+            const messagesDiv = document.getElementById('messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+
+            const timeStr = timestamp.toLocaleTimeString();
+            const typeEmoji = {
+                'chat': '💬',
+                'system': '🔔',
+                'private': '📧',
+                'presence': '👥'
+            }[type] || '📝';
+
+            messageDiv.innerHTML = `
+                <strong>${typeEmoji} ${sender}</strong>
+                <span style="color: #666; font-size: 0.8em;">${timeStr}</span><br>
+                ${content}
+            `;
+
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function updateStatus(status, connected) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = status;
+            statusDiv.className = `status ${connected ? 'connected' : 'disconnected'}`;
+        }
+    </script>
+</body>
+</html>
