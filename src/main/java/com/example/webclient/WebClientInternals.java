@@ -1,14 +1,16 @@
 package com.example.webclient;
 
 import org.springframework.web.reactive.function.client.WebClient;
-import org.springframework.web.reactive.function.client.ExchangeStrategies;
+import org.springframework.web.reactive.function.client.ExchangeFilterFunction;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.netty.http.client.HttpClient;
 import reactor.netty.resources.ConnectionProvider;
-import org.springframework.http.client.reactive.ReactorClientHttpConnector;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.time.Duration;
-import java.util.List;
+import java.util.Map;
 
 /**
  * Deep Dive: WebClient Internals and Implementation
@@ -41,186 +43,168 @@ import java.util.List;
  */
 public class WebClientInternals {
 
+    private static final Logger log = LoggerFactory.getLogger(WebClientInternals.class);
+
     public static void main(String[] args) throws InterruptedException {
-        System.out.println("=== WEBCLIENT INTERNALS DEEP DIVE ===\n");
+        log.info("=== WEBCLIENT INTERNALS DEEP DIVE ===\n");
+
+        WebClientInternals demo = new WebClientInternals();
 
         // Basic WebClient usage
-        demonstrateBasicWebClient();
+        demo.demonstrateBasicUsage();
+        Thread.sleep(3000); // Wait for async operations
 
         // Advanced configuration
-        demonstrateAdvancedConfiguration();
+        demo.demonstrateAdvancedConfiguration();
+        Thread.sleep(3000);
 
         // Connection pooling and management
-        demonstrateConnectionManagement();
+        demo.demonstrateConnectionManagement();
+        Thread.sleep(6000);
 
         // Error handling and retries
-        demonstrateErrorHandlingAndRetries();
+        demo.demonstrateErrorHandlingAndRetries();
+        Thread.sleep(6000);
 
         // Streaming responses
-        demonstrateStreamingResponses();
+        demo.demonstrateStreamingResponses();
+        Thread.sleep(3000);
 
         // Performance optimization
-        demonstratePerformanceOptimization();
+        demo.demonstratePerformanceOptimization();
+        Thread.sleep(8000); // Wait for parallel requests
 
-        Thread.sleep(5000);
+        log.info("\n=== ALL WEBCLIENT EXAMPLES COMPLETED ===");
     }
 
-    private static void demonstrateBasicWebClient() {
-        System.out.println("--- BASIC WEBCLIENT USAGE ---");
+    private void demonstrateBasicUsage() {
+        log.info("--- BASIC WEBCLIENT USAGE ---");
 
-        // Create a basic WebClient
-        WebClient webClient = WebClient.builder()
+        WebClient client = WebClient.builder()
             .baseUrl("https://jsonplaceholder.typicode.com")
             .build();
 
-        // Simple GET request
-        webClient.get()
+        // GET request
+        client.get()
             .uri("/posts/1")
             .retrieve()
             .bodyToMono(String.class)
             .subscribe(
-                response -> System.out.println("  ✓ GET Response: " + response.substring(0, 100) + "..."),
-                error -> System.err.println("  ✗ GET Error: " + error.getMessage())
+                response -> log.info("  ✓ GET Response: {}...", response.substring(0, Math.min(100, response.length()))),
+                error -> log.error("  ✗ GET Error: {}", error.getMessage())
             );
 
-        // POST request with body
-        String postData = "{\"title\":\"Reactive Post\",\"body\":\"WebClient example\",\"userId\":1}";
-        webClient.post()
+        // POST request
+        client.post()
             .uri("/posts")
-            .bodyValue(postData)
+            .bodyValue(Map.of("title", "WebClient Test", "body", "Testing WebClient internals"))
             .retrieve()
             .bodyToMono(String.class)
             .subscribe(
-                response -> System.out.println("  ✓ POST Response: " + response.substring(0, 100) + "..."),
-                error -> System.err.println("  ✗ POST Error: " + error.getMessage())
+                response -> log.info("  ✓ POST Response: {}...", response.substring(0, Math.min(100, response.length()))),
+                error -> log.error("  ✗ POST Error: {}", error.getMessage())
             );
 
-        System.out.println();
+        log.info("");
     }
 
-    private static void demonstrateAdvancedConfiguration() {
-        System.out.println("--- ADVANCED WEBCLIENT CONFIGURATION ---");
+    private void demonstrateAdvancedConfiguration() {
+        log.info("--- ADVANCED WEBCLIENT CONFIGURATION ---");
 
-        // Configure custom HttpClient with Reactor Netty
+        // Custom HttpClient with connection pooling
         HttpClient httpClient = HttpClient.create()
-            .responseTimeout(Duration.ofSeconds(10))
-            .option(io.netty.channel.ChannelOption.CONNECT_TIMEOUT_MILLIS, 5000)
             .doOnConnected(conn ->
-                System.out.println("  ✓ Connection established to: " + conn.channel().remoteAddress()));
+                log.info("  ✓ Connection established to: {}", conn.channel().remoteAddress()))
+            .compress(true);
 
-        // Configure custom ExchangeStrategies
-        ExchangeStrategies strategies = ExchangeStrategies.builder()
-            .codecs(configurer -> {
-                configurer.defaultCodecs().maxInMemorySize(1024 * 1024); // 1MB
-                System.out.println("  ✓ Custom codec configuration applied");
-            })
-            .build();
-
-        // Build WebClient with advanced configuration
         WebClient advancedClient = WebClient.builder()
-            .clientConnector(new ReactorClientHttpConnector(httpClient))
-            .exchangeStrategies(strategies)
-            .filter((request, next) -> {
-                System.out.println("  ✓ Request filter: " + request.method() + " " + request.url());
-                return next.exchange(request)
-                    .doOnNext(response ->
-                        System.out.println("  ✓ Response filter: " + response.statusCode()));
+            .clientConnector(new org.springframework.http.client.reactive.ReactorClientHttpConnector(httpClient))
+            .codecs(configurer -> {
+                configurer.defaultCodecs().maxInMemorySize(1024 * 1024);
+                log.info("  ✓ Custom codec configuration applied");
             })
-            .defaultHeader("User-Agent", "WebClient-Demo/1.0")
+            .filter(logRequest())
+            .filter(logResponse())
             .build();
 
-        // Use the configured client
         advancedClient.get()
-            .uri("https://httpbin.org/get")
+            .uri("https://jsonplaceholder.typicode.com/posts/1")
             .retrieve()
             .bodyToMono(String.class)
             .subscribe(
-                response -> System.out.println("  ✓ Advanced client response received"),
-                error -> System.err.println("  ✗ Advanced client error: " + error.getMessage())
+                response -> log.info("  ✓ Advanced client response received"),
+                error -> log.error("  ✗ Advanced client error: {}", error.getMessage())
             );
 
-        System.out.println();
+        log.info("");
     }
 
-    private static void demonstrateConnectionManagement() {
-        System.out.println("--- CONNECTION MANAGEMENT ---");
+    private void demonstrateConnectionManagement() {
+        log.info("--- CONNECTION MANAGEMENT ---");
 
-        // Configure connection pool
-        ConnectionProvider connectionProvider = ConnectionProvider.builder("demo-pool")
-            .maxConnections(10)
-            .maxIdleTime(Duration.ofSeconds(30))
-            .maxLifeTime(Duration.ofMinutes(5))
-            .pendingAcquireTimeout(Duration.ofSeconds(5))
-            .evictInBackground(Duration.ofSeconds(120))
+        // Custom connection provider
+        ConnectionProvider provider = ConnectionProvider.builder("custom")
+            .maxConnections(50)
+            .pendingAcquireMaxCount(100)
+            .pendingAcquireTimeout(Duration.ofSeconds(60))
+            .maxIdleTime(Duration.ofSeconds(20))
             .build();
 
-        HttpClient pooledHttpClient = HttpClient.create(connectionProvider)
+        HttpClient httpClient = HttpClient.create(provider)
             .doOnConnected(conn ->
-                System.out.println("  ✓ Pooled connection: " + conn.channel().id()))
+                log.info("  ✓ Pooled connection: {}", conn.channel().id()))
             .doOnDisconnected(conn ->
-                System.out.println("  ✓ Connection released: " + conn.channel().id()));
+                log.info("  ✓ Connection released: {}", conn.channel().id()));
 
         WebClient pooledClient = WebClient.builder()
-            .clientConnector(new ReactorClientHttpConnector(pooledHttpClient))
+            .clientConnector(new org.springframework.http.client.reactive.ReactorClientHttpConnector(httpClient))
             .build();
 
         // Make multiple requests to see connection reuse
         Flux.range(1, 3)
             .flatMap(i ->
                 pooledClient.get()
-                    .uri("https://httpbin.org/delay/1")
+                    .uri("https://jsonplaceholder.typicode.com/posts/" + i)
                     .retrieve()
                     .bodyToMono(String.class)
                     .map(response -> "Request " + i + " completed"))
             .subscribe(
-                result -> System.out.println("  ✓ " + result),
-                error -> System.err.println("  ✗ Pool error: " + error.getMessage())
+                result -> log.info("  ✓ {}", result),
+                error -> log.error("  ✗ Connection error: {}", error.getMessage())
             );
 
-        System.out.println();
+        log.info("");
     }
 
-    private static void demonstrateErrorHandlingAndRetries() {
-        System.out.println("--- ERROR HANDLING AND RETRIES ---");
+    private void demonstrateErrorHandlingAndRetries() {
+        log.info("--- ERROR HANDLING AND RETRIES ---");
 
-        WebClient errorClient = WebClient.create("https://httpbin.org");
+        WebClient client = WebClient.builder()
+            .baseUrl("https://jsonplaceholder.typicode.com")
+            .filter(handle5xxErrors())
+            .build();
 
-        // Demonstrate different error scenarios
-        errorClient.get()
-            .uri("/status/500") // This will return 500 error
-            .retrieve()
-            .onStatus(status -> status.is5xxServerError(),
-                response -> {
-                    System.out.println("  ✓ Handling 5xx error: " + response.statusCode());
-                    return Mono.error(new RuntimeException("Server error occurred"));
-                })
-            .bodyToMono(String.class)
-            .retry(2)
-            .onErrorReturn("Fallback response after retries")
-            .subscribe(
-                response -> System.out.println("  ✓ Error handling result: " + response),
-                error -> System.err.println("  ✗ Final error: " + error.getMessage())
-            );
-
-        // Exponential backoff retry
-        errorClient.get()
-            .uri("/status/503")
+        // Simulate error handling
+        client.get()
+            .uri("/posts/nonexistent")
             .retrieve()
             .bodyToMono(String.class)
-            .retryWhen(reactor.util.retry.Retry.backoff(3, Duration.ofMillis(100))
-                .doBeforeRetry(retrySignal ->
-                    System.out.println("  ✓ Retry attempt: " + retrySignal.totalRetries())))
-            .onErrorReturn("Final fallback")
+            .retryWhen(reactor.util.retry.Retry.backoff(3, Duration.ofSeconds(1)))
+            .onErrorResume(error -> {
+                log.warn("  ⚠️ Fallback triggered after retries: {}", error.getMessage());
+                return Mono.just("Fallback response");
+            })
             .subscribe(
-                response -> System.out.println("  ✓ Retry result: " + response),
-                error -> System.err.println("  ✗ Retry exhausted: " + error.getMessage())
+                result -> log.info("  ✓ Final result: {}", result),
+                error -> log.error("  ✗ Unhandled error: {}", error.getMessage())
             );
 
-        System.out.println();
+        log.info("");
+        printWebClientArchitecture();
     }
 
-    private static void demonstrateStreamingResponses() {
-        System.out.println("--- STREAMING RESPONSES ---");
+    private void demonstrateStreamingResponses() {
+        log.info("--- STREAMING RESPONSES ---");
 
         WebClient streamClient = WebClient.create("https://httpbin.org");
 
@@ -231,9 +215,9 @@ public class WebClientInternals {
             .bodyToFlux(String.class)
             .take(1) // Limit for demo
             .subscribe(
-                chunk -> System.out.println("  ✓ Streamed chunk: " + chunk.substring(0, Math.min(50, chunk.length())) + "..."),
-                error -> System.err.println("  ✗ Stream error: " + error.getMessage()),
-                () -> System.out.println("  ✓ Stream completed")
+                chunk -> log.info("  ✓ Streamed chunk: " + chunk.substring(0, Math.min(50, chunk.length())) + "..."),
+                error -> log.error("  ✗ Stream error: " + error.getMessage()),
+                () -> log.info("  ✓ Stream completed")
             );
 
         // Handle large responses with streaming
@@ -243,28 +227,32 @@ public class WebClientInternals {
             .bodyToFlux(org.springframework.core.io.buffer.DataBuffer.class)
             .map(buffer -> {
                 int size = buffer.readableByteCount();
+                log.info("  ✓ Streamed buffer size: " + size + " bytes");
                 org.springframework.core.io.buffer.DataBufferUtils.release(buffer);
                 return size;
             })
             .reduce(0, Integer::sum)
             .subscribe(
-                totalBytes -> System.out.println("  ✓ Total bytes streamed: " + totalBytes),
-                error -> System.err.println("  ✗ Streaming error: " + error.getMessage())
+                totalBytes -> log.info("  ✓ Total bytes streamed: " + totalBytes),
+                error -> log.error("  ✗ Streaming error: " + error.getMessage())
             );
 
-        System.out.println();
+        log.info("");
     }
 
-    private static void demonstratePerformanceOptimization() {
-        System.out.println("--- PERFORMANCE OPTIMIZATION ---");
+    private void demonstratePerformanceOptimization() {
+        log.info("--- PERFORMANCE OPTIMIZATION ---");
 
-        // Measure performance of different approaches
         WebClient perfClient = WebClient.create("https://httpbin.org");
 
-        long startTime = System.currentTimeMillis();
+        // Variables to capture timing results
+        final long[] sequentialTime = {0};
+        final long[] parallelTime = {0};
 
-        // Sequential requests (slower)
-        System.out.println("Sequential requests:");
+        // Sequential requests (slower) - concatMap processes one at a time
+        log.info("Sequential requests (using concatMap - processes one at a time):");
+        long sequentialStartTime = System.currentTimeMillis();
+
         Flux.range(1, 3)
             .concatMap(i ->
                 perfClient.get()
@@ -273,67 +261,104 @@ public class WebClientInternals {
                     .bodyToMono(String.class)
                     .map(response -> "Sequential " + i))
             .collectList()
-            .subscribe(
-                results -> {
-                    long sequentialTime = System.currentTimeMillis() - startTime;
-                    System.out.println("  ✓ Sequential completed in: " + sequentialTime + "ms");
-                    results.forEach(result -> System.out.println("    " + result));
+            .doOnNext(results -> {
+                sequentialTime[0] = System.currentTimeMillis() - sequentialStartTime;
+                log.info("  ✓ Sequential completed in: " + sequentialTime[0] + "ms");
+                results.forEach(result -> log.info("    " + result));
+            })
+            .doOnError(error -> log.error("  ✗ Sequential error: " + error.getMessage()))
+            .block(); // Block to ensure completion before continuing
 
-                    // Parallel requests (faster)
-                    testParallelRequests(perfClient);
-                },
-                error -> System.err.println("  ✗ Sequential error: " + error.getMessage())
-            );
-    }
+        log.info("");
 
-    private static void testParallelRequests(WebClient client) {
-        System.out.println("Parallel requests:");
-        long startTime = System.currentTimeMillis();
+        // Parallel requests (faster) - flatMap subscribes to all at once
+        log.info("Parallel requests (using flatMap - subscribes to all concurrently):");
+        long parallelStartTime = System.currentTimeMillis();
 
         Flux.range(1, 3)
             .flatMap(i ->
-                client.get()
+                perfClient.get()
                     .uri("/delay/1")
                     .retrieve()
                     .bodyToMono(String.class)
                     .map(response -> "Parallel " + i))
             .collectList()
-            .subscribe(
-                results -> {
-                    long parallelTime = System.currentTimeMillis() - startTime;
-                    System.out.println("  ✓ Parallel completed in: " + parallelTime + "ms");
-                    results.forEach(result -> System.out.println("    " + result));
+            .doOnNext(results -> {
+                parallelTime[0] = System.currentTimeMillis() - parallelStartTime;
+                log.info("  ✓ Parallel completed in: " + parallelTime[0] + "ms");
+                results.forEach(result -> log.info("    " + result));
+            })
+            .doOnError(error -> log.error("  ✗ Parallel error: " + error.getMessage()))
+            .block(); // Block to ensure completion
 
-                    printWebClientArchitectureSummary();
-                },
-                error -> System.err.println("  ✗ Parallel error: " + error.getMessage())
-            );
+        log.info("");
+
+        // Print actual performance comparison using measured times
+        log.info("Performance Comparison (actual measurements):");
+        log.info("  • Sequential (concatMap): " + sequentialTime[0] + "ms - waits for each request to complete");
+        log.info("  • Parallel (flatMap): " + parallelTime[0] + "ms - all requests execute concurrently");
+        if (parallelTime[0] > 0) {
+            double improvement = (double) sequentialTime[0] / parallelTime[0];
+            log.info("  • Improvement: " + String.format("%.1f", improvement) + "x faster with parallel execution");
+        }
+
+        log.info("\nKey Differences:");
+        log.info("  • concatMap: Guarantees sequential processing - subscribes to next only after previous completes");
+        log.info("  • flatMap: Allows concurrent processing - subscribes to all inner publishers immediately");
+        log.info("  • For I/O operations like HTTP requests, flatMap typically provides better performance");
+
+        log.info("");
+        printWebClientArchitecture();
     }
 
-    private static void printWebClientArchitectureSummary() {
-        System.out.println("\n--- WEBCLIENT ARCHITECTURE SUMMARY ---");
-        System.out.println("CORE COMPONENTS:");
-        System.out.println("  • WebClient.Builder: Configuration and setup");
-        System.out.println("  • ExchangeFunction: Core request/response handling");
-        System.out.println("  • ClientHttpConnector: Abstraction over HTTP clients");
-        System.out.println("  • ExchangeStrategies: Codec and message handling");
+    private ExchangeFilterFunction logRequest() {
+        return ExchangeFilterFunction.ofRequestProcessor(clientRequest -> {
+            log.info("  ✓ Request filter: {} {}", clientRequest.method(), clientRequest.url());
+            return Mono.just(clientRequest);
+        });
+    }
 
-        System.out.println("\nREACTOR NETTY INTEGRATION:");
-        System.out.println("  • Non-blocking I/O with Netty event loops");
-        System.out.println("  • Connection pooling and management");
-        System.out.println("  • HTTP/2 and WebSocket support");
-        System.out.println("  • SSL/TLS configuration");
+    private ExchangeFilterFunction logResponse() {
+        return ExchangeFilterFunction.ofResponseProcessor(clientResponse -> {
+            log.info("  ✓ Response filter: {}", clientResponse.statusCode());
+            return Mono.just(clientResponse);
+        });
+    }
 
-        System.out.println("\nPERFORMANCE FEATURES:");
-        System.out.println("  • Connection reuse and pooling");
-        System.out.println("  • Streaming request/response bodies");
-        System.out.println("  • Backpressure handling");
-        System.out.println("  • Parallel request processing");
+    private ExchangeFilterFunction handle5xxErrors() {
+        return ExchangeFilterFunction.ofResponseProcessor(clientResponse -> {
+            if (clientResponse.statusCode().is5xxServerError()) {
+                log.info("  ✓ Handling 5xx error: {}", clientResponse.statusCode());
+                return clientResponse.createException().flatMap(Mono::error);
+            }
+            return Mono.just(clientResponse);
+        });
+    }
 
-        System.out.println("\nERROR HANDLING:");
-        System.out.println("  • Status-based error handling");
-        System.out.println("  • Retry mechanisms with backoff");
-        System.out.println("  • Circuit breaker integration");
-        System.out.println("  • Timeout configuration");
+    private void printWebClientArchitecture() {
+        log.info("--- WEBCLIENT ARCHITECTURE SUMMARY ---");
+        log.info("CORE COMPONENTS:");
+        log.info("  • WebClient: High-level reactive HTTP client");
+        log.info("  • HttpClient (Reactor Netty): Low-level HTTP transport");
+        log.info("  • ConnectionProvider: Connection pooling and lifecycle");
+        log.info("  • ExchangeFilterFunction: Request/response filtering");
+
+        log.info("\nCONFIGURATION OPTIONS:");
+        log.info("  • Base URL and default headers");
+        log.info("  • Custom codecs and message readers/writers");
+        log.info("  • Timeout and retry configuration");
+        log.info("  • SSL/TLS configuration");
+
+        log.info("\nPERFORMANCE FEATURES:");
+        log.info("  • Connection pooling and reuse");
+        log.info("  • HTTP/2 support");
+        log.info("  • Compression and content negotiation");
+        log.info("  • Non-blocking I/O with backpressure");
+
+        log.info("\nERROR HANDLING:");
+        log.info("  • Status-based error handling");
+        log.info("  • Automatic retries with backoff");
+        log.info("  • Circuit breaker patterns");
+        log.info("  • Fallback mechanisms");
     }
 }

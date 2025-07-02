@@ -3,6 +3,9 @@ package com.example.asyncservice;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.time.Duration;
 
 /**
@@ -11,6 +14,7 @@ import java.time.Duration;
  */
 public class AsyncServiceClient {
 
+    private static final Logger log = LoggerFactory.getLogger(AsyncServiceClient.class);
     private final WebClient webClient;
 
     public AsyncServiceClient() {
@@ -20,7 +24,7 @@ public class AsyncServiceClient {
     }
 
     public static void main(String[] args) throws InterruptedException {
-        System.out.println("=== ASYNC SERVICE CLIENT DEMO ===\n");
+        log.info("=== ASYNC SERVICE CLIENT DEMO ===\n");
 
         AsyncServiceClient client = new AsyncServiceClient();
 
@@ -28,14 +32,14 @@ public class AsyncServiceClient {
         client.testImmediateProcessing();
 
         // Test async processing with handle (>= 30 seconds)
-        client.testAsyncProcessing();
+        client.testAsyncProcessingWithHandle();
 
         // Keep the client running to see results
         Thread.sleep(45000); // Wait for long task to complete
     }
 
-    private void testImmediateProcessing() {
-        System.out.println("--- TESTING IMMEDIATE PROCESSING ---");
+    public void testImmediateProcessing() {
+        log.info("--- TESTING IMMEDIATE PROCESSING ---");
 
         ProcessRequest request = new ProcessRequest("Quick Task", 5);
 
@@ -45,13 +49,13 @@ public class AsyncServiceClient {
             .retrieve()
             .bodyToMono(Object.class)
             .subscribe(
-                response -> System.out.println("✓ Immediate response: " + response),
-                error -> System.err.println("✗ Immediate error: " + error.getMessage())
+                response -> log.info("✓ Immediate response: {}", response),
+                error -> log.error("✗ Immediate error: {}", error.getMessage())
             );
     }
 
-    private void testAsyncProcessing() {
-        System.out.println("\n--- TESTING ASYNC PROCESSING WITH HANDLE ---");
+    public void testAsyncProcessingWithHandle() {
+        log.info("\n--- TESTING ASYNC PROCESSING WITH HANDLE ---");
 
         ProcessRequest request = new ProcessRequest("Long Running Task", 35);
 
@@ -60,33 +64,40 @@ public class AsyncServiceClient {
             .bodyValue(request)
             .retrieve()
             .bodyToMono(HandleResponse.class)
-            .flatMap(handleResponse -> {
-                System.out.println("✓ Received handle: " + handleResponse.getTaskId());
+            .doOnNext(handleResponse -> {
+                log.info("✓ Received handle: {}", handleResponse.getTaskId());
 
                 // Poll for results
-                return pollForResult(handleResponse.getTaskId());
+                pollForResult(handleResponse.getTaskId())
+                    .subscribe(
+                        finalResult -> log.info("✓ Final result: {}", finalResult),
+                        error -> log.error("✗ Polling error: {}", error.getMessage())
+                    );
             })
-            .subscribe(
-                finalResult -> System.out.println("✓ Final result: " + finalResult),
-                error -> System.err.println("✗ Async error: " + error.getMessage())
-            );
+            .subscribe();
     }
 
-    private Mono<String> pollForResult(String taskId) {
+    private Flux<TaskResult> pollForResult(String taskId) {
         return Flux.interval(Duration.ofSeconds(2))
-            .flatMap(tick -> {
-                System.out.println("Polling for task: " + taskId + " (attempt " + (tick + 1) + ")");
-
-                return webClient.get()
+            .doOnNext(tick ->
+                log.info("Polling for task: {} (attempt {})", taskId, tick + 1))
+            .flatMap(tick ->
+                webClient.get()
                     .uri("/api/tasks/{taskId}", taskId)
                     .retrieve()
-                    .bodyToMono(TaskResult.class);
-            })
-            .filter(taskResult -> "COMPLETED".equals(taskResult.getStatus()) ||
-                                "FAILED".equals(taskResult.getStatus()))
-            .take(1)
-            .map(TaskResult::getResult)
-            .next();
+                    .bodyToMono(TaskResult.class)
+                    .onErrorReturn(createPendingTaskResult(taskId))
+            )
+            .filter(result -> !"PENDING".equals(result.getStatus()))
+            .take(1);
+    }
+
+    private TaskResult createPendingTaskResult(String taskId) {
+        TaskResult result = new TaskResult();
+        result.setTaskId(taskId);
+        result.setStatus("PENDING");
+        result.setResult(null);
+        return result;
     }
 
     // Data classes (copied from the service for simplicity)

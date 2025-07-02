@@ -1,5 +1,7 @@
 package com.example.asyncservice;
 
+import java.time.LocalDateTime;
+import java.util.concurrent.atomic.AtomicLong;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
@@ -8,14 +10,13 @@ import org.springframework.web.reactive.function.server.ServerResponse;
 import org.springframework.web.reactive.function.server.RequestPredicates;
 import org.springframework.web.reactive.function.server.RouterFunctions;
 import reactor.core.publisher.Mono;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import reactor.core.scheduler.Schedulers;
 
-import java.time.Duration;
-import java.time.LocalDateTime;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.Map;
-import java.util.UUID;
 
 /**
  * Async Service with Handle Pattern
@@ -45,12 +46,13 @@ import java.util.UUID;
 @SpringBootApplication
 public class AsyncServiceApplication {
 
+    private static final Logger log = LoggerFactory.getLogger(AsyncServiceApplication.class);
     private final Map<String, TaskResult> taskResults = new ConcurrentHashMap<>();
     private final AtomicLong taskCounter = new AtomicLong(0);
 
     public static void main(String[] args) {
-        System.out.println("=== ASYNC SERVICE WITH HANDLE PATTERN ===");
-        System.out.println("Starting async service on port 8081...");
+        log.info("=== ASYNC SERVICE WITH HANDLE PATTERN ===");
+        log.info("Starting async service on port 8081...");
         System.setProperty("server.port", "8081");
         SpringApplication.run(AsyncServiceApplication.class, args);
     }
@@ -84,8 +86,8 @@ public class AsyncServiceApplication {
     private Mono<ServerResponse> handleProcessRequest(ProcessRequest request) {
         String taskId = "task-" + taskCounter.incrementAndGet();
 
-        System.out.println("Received process request: " + request.getData() +
-            " with processing time: " + request.getProcessingTimeSeconds() + "s");
+        log.info("Received process request: {} with {} seconds processing time",
+            request.getData(), request.getProcessingTimeSeconds());
 
         if (request.getProcessingTimeSeconds() <= 30) {
             // Process immediately for short tasks
@@ -101,9 +103,10 @@ public class AsyncServiceApplication {
             // Start background processing
             processTaskInBackground(taskId, request);
 
-            return ServerResponse.accepted()
-                .bodyValue(new HandleResponse(taskId, "ACCEPTED",
-                    "Task is being processed. Use taskId to check status."));
+            HandleResponse handle = new HandleResponse(taskId, "ACCEPTED",
+                "Task is being processed. Use taskId to check status.");
+
+            return ServerResponse.accepted().bodyValue(handle);
         }
     }
 
@@ -123,7 +126,7 @@ public class AsyncServiceApplication {
 
     private void processTaskInBackground(String taskId, ProcessRequest request) {
         Mono.fromCallable(() -> {
-            System.out.println("Starting background processing for task: " + taskId);
+            log.info("Starting background processing for task: " + taskId);
 
             try {
                 // Simulate long processing
@@ -140,7 +143,7 @@ public class AsyncServiceApplication {
                     taskResult.setCompletedAt(LocalDateTime.now());
                 }
 
-                System.out.println("Background processing completed for task: " + taskId);
+                log.info("Background processing completed for task: " + taskId);
                 return result;
 
             } catch (InterruptedException e) {
@@ -159,9 +162,9 @@ public class AsyncServiceApplication {
         })
         .subscribeOn(Schedulers.boundedElastic())
         .subscribe(
-            result -> System.out.println("Task " + taskId + " completed successfully"),
+            result -> log.info("Task " + taskId + " completed successfully"),
             error -> {
-                System.err.println("Task " + taskId + " failed: " + error.getMessage());
+                log.error("Task " + taskId + " failed: " + error.getMessage());
 
                 // Update task result with error
                 TaskResult taskResult = taskResults.get(taskId);

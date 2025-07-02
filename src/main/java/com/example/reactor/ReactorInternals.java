@@ -6,9 +6,9 @@ import reactor.core.scheduler.Schedulers;
 import reactor.util.context.Context;
 import org.reactivestreams.Subscription;
 import reactor.core.CoreSubscriber;
-import reactor.core.Fuseable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import java.time.Duration;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -42,32 +42,39 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 public class ReactorInternals {
 
+    private static final Logger log = LoggerFactory.getLogger(ReactorInternals.class);
+
     public static void main(String[] args) throws InterruptedException {
-        System.out.println("=== PROJECT REACTOR INTERNALS DEEP DIVE ===\n");
+        log.info("=== PROJECT REACTOR INTERNALS DEEP DIVE ===\n");
 
         // Core building blocks
         demonstratePublisherSubscriberPattern();
+        Thread.sleep(1000);
 
         // Operator fusion optimization
         demonstrateOperatorFusion();
+        Thread.sleep(1000);
 
         // Scheduler system
         demonstrateSchedulerSystem();
+        Thread.sleep(2000);
 
         // Context propagation
         demonstrateContextPropagation();
+        Thread.sleep(1000);
 
         // Custom operators
         demonstrateCustomOperator();
+        Thread.sleep(1000);
 
         // Backpressure internals
         demonstrateBackpressureInternals();
 
-        Thread.sleep(5000);
+        log.info("\n=== ALL REACTOR INTERNALS EXAMPLES COMPLETED ===");
     }
 
     private static void demonstratePublisherSubscriberPattern() {
-        System.out.println("--- PUBLISHER-SUBSCRIBER PATTERN INTERNALS ---");
+        log.info("--- PUBLISHER-SUBSCRIBER PATTERN INTERNALS ---");
 
         // Create a custom subscriber to see internals
         Flux<Integer> source = Flux.range(1, 5)
@@ -80,35 +87,34 @@ public class ReactorInternals {
             @Override
             public void onSubscribe(Subscription s) {
                 this.subscription = s;
-                System.out.println("  ✓ onSubscribe: Subscription established");
+                log.info("  ✓ onSubscribe: Subscription established");
                 s.request(Long.MAX_VALUE); // Request all items
             }
 
             @Override
             public void onNext(Integer integer) {
-                System.out.println("  ✓ onNext: Received " + integer +
-                    " on thread " + Thread.currentThread().getName());
+                log.info("  ✓ onNext: Received {} on thread {}", integer, Thread.currentThread().getName());
             }
 
             @Override
             public void onError(Throwable t) {
-                System.err.println("  ✗ onError: " + t.getMessage());
+                log.error("  ✗ onError: {}", t.getMessage());
             }
 
             @Override
             public void onComplete() {
-                System.out.println("  ✓ onComplete: Stream finished");
+                log.info("  ✓ onComplete: Stream finished");
             }
         });
 
-        System.out.println();
+        log.info("");
     }
 
     private static void demonstrateOperatorFusion() {
-        System.out.println("--- OPERATOR FUSION OPTIMIZATION ---");
+        log.info("--- OPERATOR FUSION OPTIMIZATION ---");
 
         // Reactor optimizes operator chains through fusion
-        System.out.println("Demonstrating operator fusion (internal optimization):");
+        log.info("Demonstrating operator fusion (internal optimization):");
 
         // This chain will be optimized internally
         Flux<String> optimizedChain = Flux.range(1, 1000)
@@ -118,43 +124,40 @@ public class ReactorInternals {
             .take(5);                        // Limits the stream
 
         optimizedChain.subscribe(item ->
-            System.out.println("  ✓ Fused result: " + item));
+            log.info("  ✓ Fused result: {}", item));
 
         // Demonstrate conditional operator (special fusion case)
         Flux.range(1, 10)
             .cast(Object.class)  // Forces non-fuseable path
             .map(o -> (Integer) o * 2)
             .subscribe(result ->
-                System.out.println("  ✓ Non-fused result: " + result));
+                log.info("  ✓ Non-fused result: {}", result));
 
-        System.out.println();
+        log.info("");
     }
 
     private static void demonstrateSchedulerSystem() {
-        System.out.println("--- SCHEDULER SYSTEM INTERNALS ---");
+        log.info("--- SCHEDULER SYSTEM INTERNALS ---");
 
         // Different schedulers for different workloads
-        System.out.println("Scheduler types and their use cases:");
+        log.info("Scheduler types and their use cases:");
 
         // Immediate scheduler (current thread)
         Mono.just("immediate")
             .subscribeOn(Schedulers.immediate())
-            .subscribe(value -> System.out.println("  ✓ Immediate: " + value +
-                " on " + Thread.currentThread().getName()));
+            .subscribe(value -> log.info("  ✓ Immediate: {} on {}", value, Thread.currentThread().getName()));
 
         // Single scheduler (single daemon thread)
         Mono.just("single")
             .subscribeOn(Schedulers.single())
-            .subscribe(value -> System.out.println("  ✓ Single: " + value +
-                " on " + Thread.currentThread().getName()));
+            .subscribe(value -> log.info("  ✓ Single: {} on {}", value, Thread.currentThread().getName()));
 
         // Parallel scheduler (CPU-bound work)
         Flux.range(1, 4)
             .parallel()
             .runOn(Schedulers.parallel())
             .map(i -> {
-                System.out.println("  ✓ Parallel processing " + i +
-                    " on " + Thread.currentThread().getName());
+                log.info("  ✓ Parallel processing {} on {}", i, Thread.currentThread().getName());
                 return i * i;
             })
             .sequential()
@@ -167,14 +170,13 @@ public class ReactorInternals {
             return "I/O result";
         })
         .subscribeOn(Schedulers.boundedElastic())
-        .subscribe(value -> System.out.println("  ✓ BoundedElastic: " + value +
-            " on " + Thread.currentThread().getName()));
+        .subscribe(value -> log.info("  ✓ BoundedElastic: {} on {}", value, Thread.currentThread().getName()));
 
-        System.out.println();
+        log.info("");
     }
 
     private static void demonstrateContextPropagation() {
-        System.out.println("--- CONTEXT PROPAGATION INTERNALS ---");
+        log.info("--- CONTEXT PROPAGATION INTERNALS ---");
 
         // Context is Reactor's answer to ThreadLocal in reactive chains
         String userId = "user123";
@@ -185,12 +187,11 @@ public class ReactorInternals {
                 Mono.deferContextual(ctx -> {
                     String user = ctx.get("userId");
                     String trace = ctx.get("traceId");
-                    System.out.println("  ✓ Processing with context - User: " + user +
-                        ", Trace: " + trace);
+                    log.info("  ✓ Processing with context - User: {}, Trace: {}", user, trace);
                     return Mono.just(data + " completed");
                 }))
             .contextWrite(Context.of("userId", userId, "traceId", traceId))
-            .subscribe(result -> System.out.println("  ✓ Result: " + result));
+            .subscribe(result -> log.info("  ✓ Result: {}", result));
 
         // Context is immutable and flows downstream
         Flux.range(1, 3)
@@ -200,30 +201,30 @@ public class ReactorInternals {
                     return Mono.just("Item " + i + " in " + context);
                 }))
             .contextWrite(Context.of("operation", "batch-processing"))
-            .subscribe(item -> System.out.println("  ✓ " + item));
+            .subscribe(item -> log.info("  ✓ " + item));
 
-        System.out.println();
+        log.info("");
     }
 
     private static void demonstrateCustomOperator() {
-        System.out.println("--- CUSTOM OPERATOR IMPLEMENTATION ---");
+        log.info("--- CUSTOM OPERATOR IMPLEMENTATION ---");
 
         // Create a custom operator that adds logging
         Flux<Integer> source = Flux.range(1, 5);
 
         source.transform(upstream ->
             upstream.doOnNext(item ->
-                System.out.println("  ✓ Custom operator: Processing " + item))
+                log.info("  ✓ Custom operator: Processing " + item))
             .map(item -> item * 10)
             .doOnNext(item ->
-                System.out.println("  ✓ Custom operator: Transformed to " + item))
-        ).subscribe(result -> System.out.println("  ✓ Final result: " + result));
+                log.info("  ✓ Custom operator: Transformed to " + item))
+        ).subscribe(result -> log.info("  ✓ Final result: " + result));
 
-        System.out.println();
+        log.info("");
     }
 
     private static void demonstrateBackpressureInternals() {
-        System.out.println("--- BACKPRESSURE INTERNALS ---");
+        log.info("--- BACKPRESSURE INTERNALS ---");
 
         // Custom subscriber that controls demand
         Flux.range(1, 100)
@@ -234,60 +235,60 @@ public class ReactorInternals {
                 @Override
                 public void onSubscribe(Subscription s) {
                     this.subscription = s;
-                    System.out.println("  ✓ Backpressure: Starting with demand for 3 items");
+                    log.info("  ✓ Backpressure: Starting with demand for 3 items");
                     s.request(3); // Request only 3 items initially
                 }
 
                 @Override
                 public void onNext(Integer integer) {
                     long count = requestCount.incrementAndGet();
-                    System.out.println("  ✓ Backpressure: Received " + integer +
+                    log.info("  ✓ Backpressure: Received " + integer +
                         " (total: " + count + ")");
 
                     // Request more items after processing some
                     if (count % 3 == 0 && count < 10) {
-                        System.out.println("  ✓ Backpressure: Requesting 2 more items");
+                        log.info("  ✓ Backpressure: Requesting 2 more items");
                         subscription.request(2);
                     }
                 }
 
                 @Override
                 public void onError(Throwable t) {
-                    System.err.println("  ✗ Backpressure error: " + t.getMessage());
+                    log.error("  ✗ Backpressure error: " + t.getMessage());
                 }
 
                 @Override
                 public void onComplete() {
-                    System.out.println("  ✓ Backpressure: Completed with " +
+                    log.info("  ✓ Backpressure: Completed with " +
                         requestCount.get() + " items processed");
                 }
             });
 
-        System.out.println();
+        log.info("");
         printReactorArchitectureSummary();
     }
 
     private static void printReactorArchitectureSummary() {
-        System.out.println("--- REACTOR ARCHITECTURE SUMMARY ---");
-        System.out.println("CORE COMPONENTS:");
-        System.out.println("  • Publisher: Data source (Mono/Flux)");
-        System.out.println("  • Subscriber: Data consumer with lifecycle callbacks");
-        System.out.println("  • Subscription: Controls demand and cancellation");
-        System.out.println("  • Processor: Both Publisher and Subscriber");
+        log.info("--- REACTOR ARCHITECTURE SUMMARY ---");
+        log.info("CORE COMPONENTS:");
+        log.info("  • Publisher: Data source (Mono/Flux)");
+        log.info("  • Subscriber: Data consumer with lifecycle callbacks");
+        log.info("  • Subscription: Controls demand and cancellation");
+        log.info("  • Processor: Both Publisher and Subscriber");
 
-        System.out.println("\nOPTIMIZATIONS:");
-        System.out.println("  • Operator Fusion: Combines operators for efficiency");
-        System.out.println("  • Conditional: Optimizes filter operations");
-        System.out.println("  • Queue Fusion: Reduces object allocations");
+        log.info("\nOPTIMIZATIONS:");
+        log.info("  • Operator Fusion: Combines operators for efficiency");
+        log.info("  • Conditional: Optimizes filter operations");
+        log.info("  • Queue Fusion: Reduces object allocations");
 
-        System.out.println("\nSCHEDULING:");
-        System.out.println("  • subscribeOn(): Controls subscription thread");
-        System.out.println("  • publishOn(): Controls emission thread");
-        System.out.println("  • Scheduler abstraction over thread pools");
+        log.info("\nSCHEDULING:");
+        log.info("  • subscribeOn(): Controls subscription thread");
+        log.info("  • publishOn(): Controls emission thread");
+        log.info("  • Scheduler abstraction over thread pools");
 
-        System.out.println("\nBACKPRESSURE:");
-        System.out.println("  • Demand-driven: Subscribers control flow");
-        System.out.println("  • Strategies: Buffer, Drop, Latest, Error");
-        System.out.println("  • Built into the protocol");
+        log.info("\nBACKPRESSURE:");
+        log.info("  • Demand-driven: Subscribers control flow");
+        log.info("  • Strategies: Buffer, Drop, Latest, Error");
+        log.info("  • Built into the protocol");
     }
 }
