@@ -152,15 +152,47 @@ public class ReactorBasics {
     private void backpressureExample() {
         System.out.println("--- BACKPRESSURE EXAMPLE ---");
 
-        // Fast producer, slow consumer
-        Flux.interval(Duration.ofMillis(100)) // Fast producer
-            .onBackpressureBuffer(10) // Buffer up to 10 elements
-            .take(5)
-            .delayElements(Duration.ofMillis(500)) // Slow consumer
+        // Example 1: Backpressure overflow (will actually trigger error)
+        System.out.println("1. Backpressure Overflow Example:");
+        Flux.interval(Duration.ofMillis(10)) // Very fast producer (100 items/second)
+            .onBackpressureBuffer(5) // Small buffer - will overflow quickly
+            .take(50) // Take enough items to cause overflow
+            .delayElements(Duration.ofMillis(200)) // Very slow consumer (5 items/second)
             .subscribe(
-                value -> System.out.println("✓ Processed: " + value),
-                error -> System.out.println("✗ Backpressure error: " + error.getMessage()),
-                () -> System.out.println("✓ Backpressure demo completed")
+                value -> System.out.println("  ✓ Processed: " + value),
+                error -> System.out.println("  ✗ Backpressure error: " + error.getMessage()),
+                () -> System.out.println("  ✓ Backpressure overflow demo completed")
+            );
+
+        // Wait a bit to see the overflow
+        try { Thread.sleep(2000); } catch (InterruptedException e) {}
+
+        System.out.println("\n2. Backpressure Drop Strategy:");
+        // Example 2: Drop strategy (drops newest items when buffer is full)
+        Flux.interval(Duration.ofMillis(50)) // Fast producer
+            .onBackpressureDrop(dropped ->
+                System.out.println("  ⚠️ Dropped item: " + dropped))
+            .take(20)
+            .delayElements(Duration.ofMillis(300)) // Slow consumer
+            .subscribe(
+                value -> System.out.println("  ✓ Processed (drop): " + value),
+                error -> System.out.println("  ✗ Drop error: " + error.getMessage()),
+                () -> System.out.println("  ✓ Drop strategy demo completed")
+            );
+
+        // Wait to see the drop behavior
+        try { Thread.sleep(3000); } catch (InterruptedException e) {}
+
+        System.out.println("\n3. Backpressure Latest Strategy:");
+        // Example 3: Latest strategy (keeps only the latest item)
+        Flux.interval(Duration.ofMillis(50)) // Fast producer
+            .onBackpressureLatest()
+            .take(15)
+            .delayElements(Duration.ofMillis(400)) // Very slow consumer
+            .subscribe(
+                value -> System.out.println("  ✓ Processed (latest): " + value),
+                error -> System.out.println("  ✗ Latest error: " + error.getMessage()),
+                () -> System.out.println("  ✓ Latest strategy demo completed")
             );
 
         System.out.println();

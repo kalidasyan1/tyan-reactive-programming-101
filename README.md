@@ -91,6 +91,7 @@ mvn clean install
 
 ### 📚 Phase 1: Fundamentals (30 minutes)
 Run these examples to understand basic concepts:
+Refer to the reactor-core guide for basic concepts and operators: [Reactor Core Guide](https://www.baeldung.com/reactor-core)
 
 ```bash
 # 1. Core Reactor concepts (Mono, Flux, operators)

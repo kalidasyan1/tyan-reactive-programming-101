@@ -92,12 +92,8 @@ public class FrameworkComparison {
                 .map(String::toUpperCase)
                 .filter(fruit -> fruit.length() > 5)
                 .collect(java.util.stream.Collectors.toList()))
-            .thenAccept(results -> {
-                @SuppressWarnings("unchecked")
-                java.util.List<String> resultList = (java.util.List<String>) results;
-                resultList.forEach(result ->
-                    System.out.println("  CompletableFuture: " + result));
-            });
+            .thenAccept(results -> results.forEach(result ->
+                System.out.println("  CompletableFuture: " + result)));
 
         System.out.println();
     }

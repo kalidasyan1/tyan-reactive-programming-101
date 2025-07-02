@@ -13,7 +13,6 @@ import java.nio.channels.CompletionHandler;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.time.Duration;
-import java.util.concurrent.CompletableFuture;
 
 /**
  * Understanding the Relationship: Reactive Frameworks, NIO, and Netty
@@ -111,7 +110,7 @@ public class NioReactiveRelationship {
         }).delayElement(Duration.ofMillis(100)); // Simulate I/O delay
 
         Mono<String> networkCall = Mono.fromCallable(() -> {
-            // This would use Netty/NIO for network operations
+            // This would use Netty/NIO for network operations in real implementation
             return "Network response from reactive stream";
         }).delayElement(Duration.ofMillis(150));
 
@@ -134,7 +133,7 @@ public class NioReactiveRelationship {
 
         // Create a simple HTTP server using Reactor Netty
         HttpServer server = HttpServer.create()
-            .port(8080)
+            .port(8090)
             .route(routes -> routes
                 .get("/hello", (request, response) ->
                     response.sendString(Mono.just("Hello from Reactor Netty!")))
@@ -147,14 +146,14 @@ public class NioReactiveRelationship {
 
         // Start server (non-blocking)
         server.bindNow(); // In production, use .bind() which returns Mono<DisposableServer>
-        System.out.println("  ✓ Reactor Netty server started on port 8080");
+        System.out.println("  ✓ Reactor Netty server started on port 8090");
 
         // Create HTTP client
         HttpClient client = HttpClient.create();
 
         // Make non-blocking HTTP calls
         client.get()
-            .uri("http://localhost:8080/hello")
+            .uri("http://localhost:8090/hello")
             .responseContent()
             .asString()
             .subscribe(
@@ -211,24 +210,85 @@ public class NioReactiveRelationship {
     private static void explainEventLoopModel() {
         System.out.println("\n--- EVENT LOOP MODEL ---");
 
-        // Demonstrate event loop concept
-        LoopResources eventLoop = LoopResources.create("demo-event-loop", 2, true);
-
         System.out.println("Event Loop Characteristics:");
         System.out.println("  • Single-threaded event processing");
         System.out.println("  • Non-blocking operations");
         System.out.println("  • Efficient resource utilization");
 
-        // Show how tasks are handled in event loop
+        // EXAMPLE 1: Demonstrate actual Netty event loop usage
+        System.out.println("\n1. Using Netty EventLoop directly:");
+        LoopResources eventLoop = LoopResources.create("demo-event-loop", 2, true);
+
+        try {
+            // Get the actual Netty EventLoop from LoopResources
+            io.netty.channel.EventLoop nettyEventLoop = eventLoop.onClient(true).next();
+
+            // Schedule tasks directly on the event loop
+            for (int i = 1; i <= 3; i++) {
+                final int taskId = i;
+                nettyEventLoop.execute(() -> {
+                    System.out.println("  ✓ EventLoop Task " + taskId + " on thread: " +
+                        Thread.currentThread().getName());
+                    // Simulate some work
+                    try {
+                        Thread.sleep(50);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                });
+            }
+
+            // Wait a bit to see the results
+            Thread.sleep(200);
+
+        } catch (Exception e) {
+            System.out.println("  ℹ️ EventLoop direct access not available in this context");
+        }
+
+        // EXAMPLE 2: Reactor's scheduler demonstration (different from event loops)
+        System.out.println("\n2. Reactor Schedulers (separate from event loops):");
         Flux.range(1, 5)
             .flatMap(i -> Mono.fromCallable(() -> {
-                System.out.println("  ✓ Task " + i + " on thread: " +
+                System.out.println("  ✓ Reactor Task " + i + " on thread: " +
                     Thread.currentThread().getName());
                 return "Result " + i;
-            }).subscribeOn(Schedulers.boundedElastic()))
+            }).subscribeOn(Schedulers.boundedElastic())) // This uses thread pools, NOT event loops
             .subscribe();
+
+        // EXAMPLE 3: Show the difference between schedulers
+        System.out.println("\n3. Different Reactor Schedulers:");
+
+        // Single scheduler (closer to event loop concept)
+        Mono.just("single-scheduler")
+            .subscribeOn(Schedulers.single())
+            .doOnNext(value -> System.out.println("  ✓ Single: " + value +
+                " on " + Thread.currentThread().getName()))
+            .subscribe();
+
+        // Parallel scheduler (CPU-bound work)
+        Mono.just("parallel-scheduler")
+            .subscribeOn(Schedulers.parallel())
+            .doOnNext(value -> System.out.println("  ✓ Parallel: " + value +
+                " on " + Thread.currentThread().getName()))
+            .subscribe();
+
+        // Wait for async operations to complete
+        try {
+            Thread.sleep(500);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
 
         // Cleanup
         eventLoop.dispose();
+
+        System.out.println("\n🔍 Key Insights:");
+        System.out.println("  • Event loops are single-threaded, non-blocking execution contexts");
+        System.out.println("  • Netty uses event loops for I/O operations");
+        System.out.println("  • Reactor Schedulers are SEPARATE - they use thread pools");
+        System.out.println("  • boundedElastic() = thread pool for blocking I/O");
+        System.out.println("  • single() = single daemon thread (NOT an event loop)");
+        System.out.println("  • parallel() = thread pool for CPU-bound work");
+        System.out.println("  • Event loops are used internally by Reactor Netty for network I/O");
     }
 }
