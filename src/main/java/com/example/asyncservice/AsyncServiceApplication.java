@@ -1,7 +1,9 @@
 package com.example.asyncservice;
 
 import java.time.LocalDateTime;
+import java.time.Duration;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.TimeoutException;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
@@ -19,29 +21,135 @@ import reactor.core.scheduler.Schedulers;
 
 
 /**
- * Async Service with Handle Pattern
+ * Async Service with Handle Pattern - Advanced Reactive Architecture
  *
- * Service Architecture:
- * ┌─────────────────────────────────────────────────────────────────┐
- * │                    ASYNC SERVICE DESIGN                         │
- * ├─────────────────────────────────────────────────────────────────┤
- * │  Client Request → Time Check → Immediate/Handle Response        │
- * │                                                                 │
- * │  ┌─────────────────┐    ┌──────────────────┐                   │
- * │  │   < 30 seconds  │    │   >= 30 seconds  │                   │
- * │  │   Direct Reply  │    │   Return Handle  │                   │
- * │  └─────────────────┘    └──────────────────┘                   │
- * │                                  │                             │
- * │                         ┌─────────────────┐                    │
- * │                         │ Background Task │                    │
- * │                         │   Processing    │                    │
- * │                         └─────────────────┘                    │
- * │                                  │                             │
- * │                         ┌─────────────────┐                    │
- * │                         │ Result Storage  │                    │
- * │                         │ (In-Memory Map) │                    │
- * │                         └─────────────────┘                    │
- * └─────────────────────────────────────────────────────────────────┘
+ * OVERVIEW:
+ * This service demonstrates a sophisticated async processing pattern that uses a timeout-based
+ * approach to determine response strategy. It showcases reactive programming principles using
+ * Spring WebFlux and Project Reactor with a 30-second SLA commitment.
+ *
+ * CORE DESIGN PATTERN:
+ * The service implements a "Timeout-Based Handle Pattern" with SERVER-SIDE SLA enforcement:
+ * - ALL tasks start processing immediately
+ * - If processing completes ≤30s: Return result directly to client
+ * - If processing exceeds 30s: Return handle and continue processing in background
+ *
+ * ARCHITECTURE OVERVIEW:
+ * ┌─────────────────────────────────────────────────────────────────────────────────────┐
+ * │                           ASYNC SERVICE ARCHITECTURE                                │
+ * ├─────────────────────────────────────────────────────────────────────────────────────┤
+ * │                                                                                     │
+ * │  ┌─────────────┐     ┌──────────────────┐     ┌────────────────────────┐           │
+ * │  │   CLIENT    │────▶│  REQUEST ROUTER  │────▶│    START PROCESSING    │           │
+ * │  │             │     │   (WebFlux)      │     │    (ALL REQUESTS)      │           │
+ * │  └─────────────┘     └──────────────────┘     └────────────────────────┘           │
+ * │                                                           │                        │
+ * │                               ┌───────────────────────────┼───────────────────────┐│
+ * │                               │                           ▼                       ││
+ * │  ┌─────────────────────────────┼─────────────┐    ┌──────────────────────────────┐││
+ * │  │      IMMEDIATE RESPONSE     │             │    │      TIMEOUT RESPONSE       │││
+ * │  │     (Completed ≤ 30s)       │             │    │     (Exceeds 30s)            │││
+ * │  │                             │             │    │                              │││
+ * │  │  ┌─────────────────────┐    │             │    │  ┌─────────────────────┐     │││
+ * │  │  │   30s Timeout       │    │             │    │  │   Return Handle     │     │││
+ * │  │  │   Processing        │    │             │    │  │   (Task ID)         │     │││
+ * │  │  │   Completes         │    │             │    │  └─────────────────────┘     │││
+ * │  │  └─────────────────────┘    │             │    │            │                 │││
+ * │  │            │                │             │    │            ▼                 │││
+ * │  │            ▼                │             │    │  ┌─────────────────────┐     │││
+ * │  │  ┌─────────────────────┐    │             │    │  │   Continue Task     │     │││
+ * │  │  │   Direct Response   │    │             │    │  │   in Background     │     │││
+ * │  │  │   (Completed)       │    │             │    │  │   (No Time Limit)   │     │││
+ * │  │  └─────────────────────┘    │             │    │  └─────────────────────┘     │││
+ * │  └─────────────────────────────┼─────────────┘    │            │                 │││
+ * │                               │                  │            ▼                 │││
+ * │                               │                  │  ┌─────────────────────┐     │││
+ * │                               │                  │  │   In-Memory Store   │     │││
+ * │                               │                  │  │ (ConcurrentHashMap) │     │││
+ * │                               │                  │  │  Task Results &     │     │││
+ * │                               │                  │  │     Status          │     │││
+ * │                               │                  │  └─────────────────────┘     │││
+ * │                               │                  └──────────────────────────────┘││
+ * │                               │                                                  ││
+ * │                               │  ┌──────────────────────────────────────────────┘│
+ * │                               │  │                                               │
+ * │                               │  ▼                                               │
+ * │                               │  ┌─────────────────────────────────────────────┐ │
+ * │                               │  │           POLLING INTERFACE                 │ │
+ * │                               │  │                                             │ │
+ * │                               │  │  GET /api/tasks/{taskId}                   │ │
+ * │                               │  │  - Check task status                       │ │
+ * │                               │  │  - Retrieve results when complete          │ │
+ * │                               │  │  - Handle error states                     │ │
+ * │                               │  └─────────────────────────────────────────────┘ │
+ * │                               └────────────────────────────────────────────────────│
+ * └─────────────────────────────────────────────────────────────────────────────────────┘
+ *
+ * DETAILED WORKFLOW:
+ *
+ * 1. REQUEST INGESTION:
+ *    - Client sends POST /api/process with { data, complexity? }
+ *    - WebFlux router receives and parses the request
+ *    - Service immediately starts processing for ALL requests
+ *
+ * 2. TIMEOUT-BASED RESPONSE STRATEGY:
+ *    - Server starts processing immediately
+ *    - Waits up to 30 seconds for completion
+ *    - IF processing completes ≤ 30 seconds:
+ *      → Return complete result directly to client
+ *      → No handle needed, single request-response cycle
+ *    - IF processing exceeds 30 seconds:
+ *      → Generate unique task ID (task-{counter})
+ *      → Store task metadata and continue processing in background
+ *      → Return HTTP 202 (Accepted) with task handle
+ *      → Client can poll for results later
+ *
+ * 3. BACKGROUND PROCESSING (Timeout Cases):
+ *    - Task continues running on Scheduler.boundedElastic() thread pool
+ *    - No time constraints for background continuation
+ *    - Progress tracked in shared task result store
+ *    - Supports error handling and status updates
+ *    - Thread-safe updates using ConcurrentHashMap
+ *
+ * 4. RESULT RETRIEVAL:
+ *    - Client polls GET /api/tasks/{taskId}
+ *    - Returns current status: PROCESSING, COMPLETED, FAILED
+ *    - Includes result data when available
+ *    - Handles task not found scenarios
+ *
+ * KEY DESIGN BENEFITS:
+ * - Real-time 30-second SLA enforcement through timeout
+ * - No upfront estimation required - let actual processing determine strategy
+ * - Prevents long-running requests from blocking the event loop
+ * - Efficient resource utilization through reactive scheduling
+ * - Scalable handle-based async pattern for long-running tasks
+ * - Non-blocking I/O for both immediate and deferred responses
+ * - Thread-safe concurrent task management
+ * - Graceful error handling and status tracking
+ *
+ * REACTIVE PRINCIPLES DEMONSTRATED:
+ * - Mono/Flux for async processing pipelines
+ * - Scheduler abstraction for thread pool management
+ * - Non-blocking I/O with WebFlux
+ * - Real-time timeout handling for SLA enforcement
+ * - Backpressure handling through reactive streams
+ * - Functional routing and request handling
+ * - Reactive timeout patterns with fallback strategies
+ *
+ * TECHNICAL STACK:
+ * - Spring WebFlux: Reactive web framework
+ * - Project Reactor: Reactive streams implementation
+ * - Scheduler.boundedElastic(): Thread pool for blocking operations
+ * - ConcurrentHashMap: Thread-safe in-memory storage
+ * - RouterFunction: Functional web routing
+ * - Mono.timeout(): Real-time SLA enforcement
+ * - onErrorResume(): Timeout fallback handling
+ *
+ * ENDPOINTS:
+ * - POST /api/process        → Submit processing task
+ * - GET  /api/tasks/{id}     → Check task status and retrieve results
+ * - GET  /api/tasks          → List all task IDs (debugging)
+ * - GET  /api/health         → Service health check
  */
 @SpringBootApplication
 public class AsyncServiceApplication {
@@ -49,6 +157,9 @@ public class AsyncServiceApplication {
     private static final Logger log = LoggerFactory.getLogger(AsyncServiceApplication.class);
     private final Map<String, TaskResult> taskResults = new ConcurrentHashMap<>();
     private final AtomicLong taskCounter = new AtomicLong(0);
+
+    // Server-side SLA configuration
+    private static final int SLA_SECONDS = 30;
 
     public static void main(String[] args) {
         log.info("=== ASYNC SERVICE WITH HANDLE PATTERN ===");
@@ -69,7 +180,7 @@ public class AsyncServiceApplication {
             .andRoute(RequestPredicates.GET("/api/tasks/{taskId}"),
                 request -> {
                     String taskId = request.pathVariable("taskId");
-                    return getTaskStatus(taskId);
+                    return getTaskResult(taskId);
                 })
 
             // List all tasks (for demo purposes)
@@ -86,98 +197,121 @@ public class AsyncServiceApplication {
     private Mono<ServerResponse> handleProcessRequest(ProcessRequest request) {
         String taskId = "task-" + taskCounter.incrementAndGet();
 
-        log.info("Received process request: {} with {} seconds processing time",
-            request.getData(), request.getProcessingTimeSeconds());
+        log.info("Received process request: {} - starting immediate processing", request.getData());
 
-        if (request.getProcessingTimeSeconds() <= 30) {
-            // Process immediately for short tasks
-            return processTaskImmediately(request)
-                .flatMap(result -> ServerResponse.ok()
-                    .bodyValue(new ImmediateResponse(result, "COMPLETED")));
-        } else {
-            // Return handle for long tasks
-            TaskResult taskResult = new TaskResult(taskId, "PROCESSING", null,
-                LocalDateTime.now(), request);
-            taskResults.put(taskId, taskResult);
+        // Start processing immediately for ALL requests
+        Mono<ProcessingResult> processingMono = startProcessing(request, taskId);
 
-            // Start background processing
-            processTaskInBackground(taskId, request);
+        // Try to complete within 30 seconds, otherwise return handle
+        return processingMono
+            .timeout(Duration.ofSeconds(SLA_SECONDS))
+            .flatMap(result -> {
+                // Processing completed within SLA - return TaskResult directly
+                log.info("Task {} completed within {} second SLA", taskId, SLA_SECONDS);
+                TaskResult taskResult = new TaskResult(taskId, TaskStatus.COMPLETED, result,
+                    LocalDateTime.now(), request);
+                taskResult.setCompletedAt(LocalDateTime.now());
 
-            HandleResponse handle = new HandleResponse(taskId, "ACCEPTED",
-                "Task is being processed. Use taskId to check status.");
+                return ServerResponse.ok().bodyValue(taskResult);
+            })
+            .onErrorResume(throwable -> {
+                if (throwable instanceof TimeoutException) {
+                    // Processing exceeded SLA - return TaskResult with PROCESSING status
+                    log.info("Task {} exceeded {} second SLA, returning TaskResult for background processing", taskId, SLA_SECONDS);
 
-            return ServerResponse.accepted().bodyValue(handle);
-        }
+                    // Store task for background continuation
+                    TaskResult taskResult = new TaskResult(taskId, TaskStatus.PROCESSING, (ProcessingResult) null,
+                        LocalDateTime.now(), request);
+                    taskResults.put(taskId, taskResult);
+
+                    // Continue processing in background (the original processingMono continues)
+                    continueProcessingInBackground(taskId, processingMono);
+
+                    return ServerResponse.accepted().bodyValue(taskResult);
+                } else {
+                    // Handle other errors - return TaskResult with FAILED status using error constructor
+                    log.error("Task {} failed with error: {}", taskId, throwable.getMessage());
+                    TaskResult taskResult = new TaskResult(taskId, TaskStatus.FAILED,
+                        "Processing failed: " + throwable.getMessage(),
+                        LocalDateTime.now(), request);
+                    taskResult.setCompletedAt(LocalDateTime.now());
+
+                    return ServerResponse.status(500).bodyValue(taskResult);
+                }
+            });
     }
 
-    private Mono<String> processTaskImmediately(ProcessRequest request) {
+    /**
+     * Start processing immediately - this method simulates actual work
+     */
+    private Mono<ProcessingResult> startProcessing(ProcessRequest request, String taskId) {
         return Mono.fromCallable(() -> {
-            // Simulate processing
+            log.info("Starting processing for task: {}", taskId);
+
+            // Calculate processing time based on complexity (1-10 scale)
+            // Complexity 1 → 0.1 factor, Complexity 10 → 1.0 factor
+            // Linear mapping: factor = (complexity - 1) / 9 * 0.9 + 0.1
+            double complexityFactor = (request.getComplexity() - 1) / 9.0 * 0.9 + 0.1;
+            long processingTimeMs = (long) (complexityFactor * 60000); // Scale to 0-60 seconds
+
+            log.info("Task {} (complexity: {}) will take {} ms to process (factor: {})",
+                taskId, request.getComplexity(), processingTimeMs, complexityFactor);
+
+            // Simulate actual processing work based on complexity
             try {
-                Thread.sleep(request.getProcessingTimeSeconds() * 1000L);
+                Thread.sleep(processingTimeMs);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 throw new RuntimeException("Processing interrupted", e);
             }
-            return "Processed: " + request.getData().toUpperCase() +
-                " (completed in " + request.getProcessingTimeSeconds() + "s)";
+
+            // Create a structured result object
+            ProcessingResult result = new ProcessingResult(
+                request.getData().toUpperCase(),
+                "Data processed successfully",
+                System.currentTimeMillis(),
+                request.getComplexity()
+            );
+
+            log.info("Processing completed for task: {}", taskId);
+            return result;
         }).subscribeOn(Schedulers.boundedElastic());
     }
 
-    private void processTaskInBackground(String taskId, ProcessRequest request) {
-        Mono.fromCallable(() -> {
-            log.info("Starting background processing for task: " + taskId);
-
-            try {
-                // Simulate long processing
-                Thread.sleep(request.getProcessingTimeSeconds() * 1000L);
-
-                String result = "Background processed: " + request.getData().toUpperCase() +
-                    " (completed after " + request.getProcessingTimeSeconds() + "s)";
-
-                // Update task result
+    /**
+     * Continue processing in background after timeout
+     */
+    private void continueProcessingInBackground(String taskId, Mono<ProcessingResult> originalProcessing) {
+        originalProcessing
+            .doOnSuccess(result -> {
+                // Update task result when background processing completes
                 TaskResult taskResult = taskResults.get(taskId);
                 if (taskResult != null) {
-                    taskResult.setStatus("COMPLETED");
+                    taskResult.setStatus(TaskStatus.COMPLETED);
                     taskResult.setResult(result);
                     taskResult.setCompletedAt(LocalDateTime.now());
+                    log.info("Background processing completed for task: {}", taskId);
                 }
-
-                log.info("Background processing completed for task: " + taskId);
-                return result;
-
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-
-                // Update task result with error
+            })
+            .doOnError(error -> {
+                // Update task result if background processing fails
                 TaskResult taskResult = taskResults.get(taskId);
                 if (taskResult != null) {
-                    taskResult.setStatus("FAILED");
-                    taskResult.setResult("Processing was interrupted");
+                    taskResult.setStatus(TaskStatus.FAILED);
+                    taskResult.setResult(null);
+                    taskResult.setErrorMessage("Error: " + error.getMessage());
                     taskResult.setCompletedAt(LocalDateTime.now());
+                    log.error("Background processing failed for task: {}", taskId, error);
                 }
-
-                throw new RuntimeException("Background processing interrupted", e);
-            }
-        })
-        .subscribeOn(Schedulers.boundedElastic())
-        .subscribe(
-            result -> log.info("Task " + taskId + " completed successfully"),
-            error -> {
-                log.error("Task " + taskId + " failed: " + error.getMessage());
-
-                // Update task result with error
-                TaskResult taskResult = taskResults.get(taskId);
-                if (taskResult != null) {
-                    taskResult.setStatus("FAILED");
-                    taskResult.setResult("Error: " + error.getMessage());
-                    taskResult.setCompletedAt(LocalDateTime.now());
-                }
-            }
-        );
+            })
+            .subscribe(); // Subscribe to continue processing in background
     }
 
-    private Mono<ServerResponse> getTaskStatus(String taskId) {
+    /**
+     * Get task result by ID
+     * Returns the complete TaskResult with current status and result (if available)
+     */
+    private Mono<ServerResponse> getTaskResult(String taskId) {
         TaskResult taskResult = taskResults.get(taskId);
 
         if (taskResult == null) {
@@ -185,85 +319,5 @@ public class AsyncServiceApplication {
         }
 
         return ServerResponse.ok().bodyValue(taskResult);
-    }
-
-    // Data classes
-    public static class ProcessRequest {
-        private String data;
-        private int processingTimeSeconds;
-
-        // Constructors
-        public ProcessRequest() {}
-
-        public ProcessRequest(String data, int processingTimeSeconds) {
-            this.data = data;
-            this.processingTimeSeconds = processingTimeSeconds;
-        }
-
-        // Getters and setters
-        public String getData() { return data; }
-        public void setData(String data) { this.data = data; }
-        public int getProcessingTimeSeconds() { return processingTimeSeconds; }
-        public void setProcessingTimeSeconds(int processingTimeSeconds) {
-            this.processingTimeSeconds = processingTimeSeconds;
-        }
-    }
-
-    public static class ImmediateResponse {
-        private String result;
-        private String status;
-
-        public ImmediateResponse(String result, String status) {
-            this.result = result;
-            this.status = status;
-        }
-
-        public String getResult() { return result; }
-        public String getStatus() { return status; }
-    }
-
-    public static class HandleResponse {
-        private String taskId;
-        private String status;
-        private String message;
-
-        public HandleResponse(String taskId, String status, String message) {
-            this.taskId = taskId;
-            this.status = status;
-            this.message = message;
-        }
-
-        public String getTaskId() { return taskId; }
-        public String getStatus() { return status; }
-        public String getMessage() { return message; }
-    }
-
-    public static class TaskResult {
-        private String taskId;
-        private String status;
-        private String result;
-        private LocalDateTime createdAt;
-        private LocalDateTime completedAt;
-        private ProcessRequest originalRequest;
-
-        public TaskResult(String taskId, String status, String result,
-                         LocalDateTime createdAt, ProcessRequest originalRequest) {
-            this.taskId = taskId;
-            this.status = status;
-            this.result = result;
-            this.createdAt = createdAt;
-            this.originalRequest = originalRequest;
-        }
-
-        // Getters and setters
-        public String getTaskId() { return taskId; }
-        public String getStatus() { return status; }
-        public void setStatus(String status) { this.status = status; }
-        public String getResult() { return result; }
-        public void setResult(String result) { this.result = result; }
-        public LocalDateTime getCreatedAt() { return createdAt; }
-        public LocalDateTime getCompletedAt() { return completedAt; }
-        public void setCompletedAt(LocalDateTime completedAt) { this.completedAt = completedAt; }
-        public ProcessRequest getOriginalRequest() { return originalRequest; }
     }
 }

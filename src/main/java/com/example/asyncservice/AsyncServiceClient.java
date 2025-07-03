@@ -2,15 +2,15 @@ package com.example.asyncservice;
 
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
+import java.time.LocalDateTime;
 
 /**
  * Client for testing the Async Service
- * Demonstrates how to interact with the handle-based async service
+ * Demonstrates how to interact with the timeout-based async service
  */
 public class AsyncServiceClient {
 
@@ -28,125 +28,102 @@ public class AsyncServiceClient {
 
         AsyncServiceClient client = new AsyncServiceClient();
 
-        // Test immediate processing (< 30 seconds)
-        client.testImmediateProcessing();
+        // Test with deterministic complexity-based processing times (1-10 scale)
+        log.info("Testing service with complexity-based processing times...\n");
+        log.info("Complexity mapping: 1→6s, 3→18s, 5→30s, 7→42s, 10→60s\n");
 
-        // Test async processing with handle (>= 30 seconds)
-        client.testAsyncProcessingWithHandle();
+        // Test different complexity levels to see both immediate and async responses
+        client.testProcessingRequest("Simple Task", 1);      // ~6s - should complete immediately
+        Thread.sleep(1000);
+
+        client.testProcessingRequest("Medium Task", 3);      // ~18s - should complete immediately
+        Thread.sleep(1000);
+
+        client.testProcessingRequest("Complex Task", 5);     // ~30s - may timeout to background
+        Thread.sleep(1000);
+
+        client.testProcessingRequest("Very Complex Task", 7); // ~42s - will definitely timeout
+        Thread.sleep(1000);
+
+        client.testProcessingRequest("Maximum Task", 10);    // ~60s - will definitely timeout
 
         // Keep the client running to see results
-        Thread.sleep(45000); // Wait for long task to complete
+        Thread.sleep(90000); // Wait for potentially long tasks to complete
     }
 
-    public void testImmediateProcessing() {
-        log.info("--- TESTING IMMEDIATE PROCESSING ---");
+    public void testProcessingRequest(String data, int complexity) {
+        log.info("--- TESTING PROCESSING REQUEST: {} (complexity: {}) ---", data, complexity);
 
-        ProcessRequest request = new ProcessRequest("Quick Task", 5);
+        ProcessRequest request = new ProcessRequest(data, complexity);
 
         webClient.post()
             .uri("/api/process")
             .bodyValue(request)
             .retrieve()
-            .bodyToMono(Object.class)
+            .bodyToMono(TaskResult.class)
             .subscribe(
-                response -> log.info("✓ Immediate response: {}", response),
-                error -> log.error("✗ Immediate error: {}", error.getMessage())
+                taskResult -> handleTaskResult(taskResult),
+                error -> log.error("✗ Request error: {}", error.getMessage())
             );
     }
 
-    public void testAsyncProcessingWithHandle() {
-        log.info("\n--- TESTING ASYNC PROCESSING WITH HANDLE ---");
+    private void handleTaskResult(TaskResult taskResult) {
+        if (TaskStatus.COMPLETED.equals(taskResult.getStatus())) {
+            // Task completed immediately (within 30 seconds)
+            log.info("✓ Task completed immediately: {}", taskResult.getTaskId());
+            logProcessingResult(taskResult);
+        } else if (TaskStatus.PROCESSING.equals(taskResult.getStatus())) {
+            // Task is running in background, start polling
+            log.info("⏳ Task is processing in background: {}", taskResult.getTaskId());
+            pollForResult(taskResult.getTaskId())
+                .subscribe(
+                    finalResult -> {
+                        log.info("✓ Background task completed: {}", finalResult.getTaskId());
+                        logProcessingResult(finalResult);
+                    },
+                    error -> log.error("✗ Polling error for task {}: {}", taskResult.getTaskId(), error.getMessage())
+                );
+        } else if (TaskStatus.FAILED.equals(taskResult.getStatus())) {
+            // Task failed immediately
+            log.error("✗ Task failed immediately: {} - {}", taskResult.getTaskId(), taskResult.getErrorMessage());
+        }
+    }
 
-        ProcessRequest request = new ProcessRequest("Long Running Task", 35);
+    private void logProcessingResult(TaskResult taskResult) {
+        if (taskResult.getResult() != null) {
+            ProcessingResult result = taskResult.getResult();
+            log.info("   📋 Processed Data: {}", result.getProcessedData());
+            log.info("   📝 Message: {}", result.getMessage());
+            log.info("   ⏱️ Timestamp: {}", new java.util.Date(result.getTimestamp()));
+            log.info("   🎯 Complexity: {}", result.getComplexity());
 
-        webClient.post()
-            .uri("/api/process")
-            .bodyValue(request)
-            .retrieve()
-            .bodyToMono(HandleResponse.class)
-            .doOnNext(handleResponse -> {
-                log.info("✓ Received handle: {}", handleResponse.getTaskId());
-
-                // Poll for results
-                pollForResult(handleResponse.getTaskId())
-                    .subscribe(
-                        finalResult -> log.info("✓ Final result: {}", finalResult),
-                        error -> log.error("✗ Polling error: {}", error.getMessage())
-                    );
-            })
-            .subscribe();
+            // Calculate actual processing duration
+            if (taskResult.getCreatedAt() != null && taskResult.getCompletedAt() != null) {
+                Duration duration = Duration.between(taskResult.getCreatedAt(), taskResult.getCompletedAt());
+                log.info("   ⌛ Duration: {} seconds", duration.getSeconds());
+            }
+        } else if (taskResult.getErrorMessage() != null) {
+            log.error("   ❌ Error: {}", taskResult.getErrorMessage());
+        }
     }
 
     private Flux<TaskResult> pollForResult(String taskId) {
-        return Flux.interval(Duration.ofSeconds(2))
+        return Flux.interval(Duration.ofSeconds(3))
             .doOnNext(tick ->
-                log.info("Polling for task: {} (attempt {})", taskId, tick + 1))
+                log.info("   🔍 Polling for task: {} (attempt {})", taskId, tick + 1))
             .flatMap(tick ->
                 webClient.get()
                     .uri("/api/tasks/{taskId}", taskId)
                     .retrieve()
                     .bodyToMono(TaskResult.class)
-                    .onErrorReturn(createPendingTaskResult(taskId))
+                    .onErrorReturn(createErrorTaskResult(taskId, "Polling failed"))
             )
-            .filter(result -> !"PENDING".equals(result.getStatus()))
-            .take(1);
+            .filter(result -> !TaskStatus.PROCESSING.equals(result.getStatus()))
+            .take(1)
+            .timeout(Duration.ofMinutes(2)); // Timeout after 2 minutes of polling
     }
 
-    private TaskResult createPendingTaskResult(String taskId) {
-        TaskResult result = new TaskResult();
-        result.setTaskId(taskId);
-        result.setStatus("PENDING");
-        result.setResult(null);
-        return result;
-    }
-
-    // Data classes (copied from the service for simplicity)
-    public static class ProcessRequest {
-        private String data;
-        private int processingTimeSeconds;
-
-        public ProcessRequest() {}
-
-        public ProcessRequest(String data, int processingTimeSeconds) {
-            this.data = data;
-            this.processingTimeSeconds = processingTimeSeconds;
-        }
-
-        public String getData() { return data; }
-        public void setData(String data) { this.data = data; }
-        public int getProcessingTimeSeconds() { return processingTimeSeconds; }
-        public void setProcessingTimeSeconds(int processingTimeSeconds) {
-            this.processingTimeSeconds = processingTimeSeconds;
-        }
-    }
-
-    public static class HandleResponse {
-        private String taskId;
-        private String status;
-        private String message;
-
-        public HandleResponse() {}
-
-        public String getTaskId() { return taskId; }
-        public void setTaskId(String taskId) { this.taskId = taskId; }
-        public String getStatus() { return status; }
-        public void setStatus(String status) { this.status = status; }
-        public String getMessage() { return message; }
-        public void setMessage(String message) { this.message = message; }
-    }
-
-    public static class TaskResult {
-        private String taskId;
-        private String status;
-        private String result;
-
-        public TaskResult() {}
-
-        public String getTaskId() { return taskId; }
-        public void setTaskId(String taskId) { this.taskId = taskId; }
-        public String getStatus() { return status; }
-        public void setStatus(String status) { this.status = status; }
-        public String getResult() { return result; }
-        public void setResult(String result) { this.result = result; }
+    private TaskResult createErrorTaskResult(String taskId, String error) {
+        return new TaskResult(taskId, TaskStatus.FAILED, error, LocalDateTime.now(), null);
     }
 }
