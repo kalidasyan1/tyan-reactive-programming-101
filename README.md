@@ -146,21 +146,25 @@ mvn spring-boot:run -Dstart-class="com.example.chat.ReactiveChatApplication"
 
 **Solution Architecture:**
 ```
-Client Request → Time Check → Decision
-                    ↓
-            < 30s: Direct Response
-            ≥ 30s: Return Handle → Background Processing → Poll for Results
+Client Request → Immediate Processing Start → 30s Timeout Check
+                         ↓
+                ≤ 30s: Direct Response
+                > 30s: Return Handle → Background Processing → Poll for Results
 ```
 
 **Key Features:**
-- ✅ Immediate response for quick tasks (< 30 seconds)
-- ✅ Handle-based polling for long tasks (≥ 30 seconds)  
+- ✅ Immediate response for quick tasks (≤ 30 seconds)
+- ✅ Handle-based polling for long tasks (> 30 seconds)
+- ✅ Complexity-based processing times (1-10 scale: 6s to 60s)
+- ✅ Type-safe TaskStatus enum (PROCESSING, COMPLETED, FAILED)
+- ✅ Lombok-powered shared data models
 - ✅ Non-blocking background processing
 - ✅ RESTful API design
 
 **Test Scenarios:**
-1. **Quick task**: `{"data":"test","processingTimeSeconds":5}` → Immediate response
-2. **Long task**: `{"data":"analysis","processingTimeSeconds":35}` → Handle + polling
+1. **Quick task**: `{"data":"simple task","complexity":1}` → ~6s, immediate response
+2. **Medium task**: `{"data":"medium task","complexity":5}` → ~30s, may timeout to background
+3. **Long task**: `{"data":"complex task","complexity":10}` → ~60s, handle + polling
 
 ### 💬 Project B: Reactive Chat Application
 

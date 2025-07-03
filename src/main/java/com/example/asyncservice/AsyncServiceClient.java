@@ -48,7 +48,7 @@ public class AsyncServiceClient {
         client.testProcessingRequest("Maximum Task", 10);    // ~60s - will definitely timeout
 
         // Keep the client running to see results
-        Thread.sleep(90000); // Wait for potentially long tasks to complete
+        Thread.sleep(100000); // Wait for potentially long tasks to complete
     }
 
     public void testProcessingRequest(String data, int complexity) {
