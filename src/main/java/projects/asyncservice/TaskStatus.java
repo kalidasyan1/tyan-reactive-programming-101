@@ -1,4 +1,4 @@
-package com.example.asyncservice;
+package projects.asyncservice;
 
 /**
  * Enum representing the status of a task

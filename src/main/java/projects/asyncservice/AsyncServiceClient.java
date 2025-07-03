@@ -1,4 +1,4 @@
-package com.example.asyncservice;
+package projects.asyncservice;
 
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Flux;

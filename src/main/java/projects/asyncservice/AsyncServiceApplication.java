@@ -1,4 +1,4 @@
-package com.example.asyncservice;
+package projects.asyncservice;
 
 import java.time.LocalDateTime;
 import java.time.Duration;

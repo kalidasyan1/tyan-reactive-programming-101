@@ -1,4 +1,4 @@
-package com.example.asyncservice;
+package projects.asyncservice;
 
 import lombok.Data;
 import lombok.NoArgsConstructor;

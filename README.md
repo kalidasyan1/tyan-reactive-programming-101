@@ -124,16 +124,16 @@ Build production-ready applications:
 #### A. Async Service with Handle Pattern
 ```bash
 # Terminal 1: Start the service
-mvn spring-boot:run -Dstart-class="com.example.asyncservice.AsyncServiceApplication"
+mvn spring-boot:run -Dstart-class="projects.asyncservice.AsyncServiceApplication"
 
 # Terminal 2: Test the service  
-mvn exec:java -Dexec.mainClass="com.example.asyncservice.AsyncServiceClient"
+mvn exec:java -Dexec.mainClass="projects.asyncservice.AsyncServiceClient"
 ```
 
 #### B. Reactive Chat Application
 ```bash
 # Terminal 1: Start chat server
-mvn spring-boot:run -Dstart-class="com.example.chat.ReactiveChatApplication"
+mvn spring-boot:run -Dstart-class="projects.chat.ReactiveChatApplication"
 
 # Open in browser: http://localhost:8082/chat.html
 ```
@@ -246,13 +246,13 @@ mvn exec:java -Dexec.mainClass="com.example.reactor.ReactorInternals"
 
 1. **Start the service** (Terminal 1):
 ```bash
-mvn spring-boot:run -Dstart-class="com.example.asyncservice.AsyncServiceApplication"
+mvn spring-boot:run -Dstart-class="projects.asyncservice.AsyncServiceApplication"
 # Server starts on http://localhost:8081
 ```
 
 2. **Test with client** (Terminal 2):
 ```bash
-mvn exec:java -Dexec.mainClass="com.example.asyncservice.AsyncServiceClient"
+mvn exec:java -Dexec.mainClass="projects.asyncservice.AsyncServiceClient"
 # Watch quick vs long task handling
 ```
 
@@ -261,12 +261,12 @@ mvn exec:java -Dexec.mainClass="com.example.asyncservice.AsyncServiceClient"
 # Quick task (immediate response)
 curl -X POST http://localhost:8081/api/process \
   -H "Content-Type: application/json" \
-  -d '{"data":"quick task","processingTimeSeconds":5}'
+  -d '{"data":"quick task","complexity":1}'
 
 # Long task (returns handle)
 curl -X POST http://localhost:8081/api/process \
   -H "Content-Type: application/json" \
-  -d '{"data":"long task","processingTimeSeconds":35}'
+  -d '{"data":"long task","complexity":10}'
 
 # Check task status (replace task-1 with actual taskId)
 curl http://localhost:8081/api/tasks/task-1
@@ -276,7 +276,7 @@ curl http://localhost:8081/api/tasks/task-1
 
 1. **Start chat server**:
 ```bash
-mvn spring-boot:run -Dstart-class="com.example.chat.ReactiveChatApplication"
+mvn spring-boot:run -Dstart-class="projects.chat.ReactiveChatApplication"
 # Server starts on http://localhost:8082
 ```
 
