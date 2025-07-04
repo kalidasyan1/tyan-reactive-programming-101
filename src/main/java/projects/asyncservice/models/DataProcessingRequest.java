@@ -1,4 +1,4 @@
-package projects.asyncservice;
+package projects.asyncservice.models;
 
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -9,11 +9,11 @@ import lombok.NoArgsConstructor;
  */
 @Data
 @NoArgsConstructor
-public class ProcessRequest {
+public class DataProcessingRequest {
     private String data;
     private int complexity = 1; // 1-10 scale, defaults to simple
 
-    public ProcessRequest(String data, int complexity) {
+    public DataProcessingRequest(String data, int complexity) {
         this.data = data;
         this.complexity = Math.max(1, Math.min(10, complexity)); // Clamp between 1-10
     }

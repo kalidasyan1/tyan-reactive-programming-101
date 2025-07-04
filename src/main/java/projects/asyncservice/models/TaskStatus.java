@@ -1,4 +1,4 @@
-package projects.asyncservice;
+package projects.asyncservice.models;
 
 /**
  * Enum representing the status of a task

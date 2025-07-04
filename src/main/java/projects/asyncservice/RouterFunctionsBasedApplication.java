@@ -5,12 +5,14 @@ import java.time.Duration;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.TimeoutException;
 import org.springframework.boot.SpringApplication;
-import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.context.annotation.Bean;
 import org.springframework.web.reactive.function.server.RouterFunction;
 import org.springframework.web.reactive.function.server.ServerResponse;
 import org.springframework.web.reactive.function.server.RequestPredicates;
 import org.springframework.web.reactive.function.server.RouterFunctions;
+import projects.asyncservice.models.DataProcessingRequest;
+import projects.asyncservice.models.DataProcessingResult;
+import projects.asyncservice.models.TaskResult;
+import projects.asyncservice.models.TaskStatus;
 import reactor.core.publisher.Mono;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -151,10 +153,10 @@ import reactor.core.scheduler.Schedulers;
  * - GET  /api/tasks          → List all task IDs (debugging)
  * - GET  /api/health         → Service health check
  */
-@SpringBootApplication
-public class AsyncServiceApplication {
+//@SpringBootApplication
+public class RouterFunctionsBasedApplication {
 
-    private static final Logger log = LoggerFactory.getLogger(AsyncServiceApplication.class);
+    private static final Logger log = LoggerFactory.getLogger(RouterFunctionsBasedApplication.class);
     private final Map<String, TaskResult> taskResults = new ConcurrentHashMap<>();
     private final AtomicLong taskCounter = new AtomicLong(0);
 
@@ -165,15 +167,15 @@ public class AsyncServiceApplication {
         log.info("=== ASYNC SERVICE WITH HANDLE PATTERN ===");
         log.info("Starting async service on port 8081...");
         System.setProperty("server.port", "8081");
-        SpringApplication.run(AsyncServiceApplication.class, args);
+        SpringApplication.run(RouterFunctionsBasedApplication.class, args);
     }
 
-    @Bean
+//    @Bean
     public RouterFunction<ServerResponse> asyncRoutes() {
         return RouterFunctions
             // Submit a processing task
             .route(RequestPredicates.POST("/api/process"),
-                request -> request.bodyToMono(ProcessRequest.class)
+                request -> request.bodyToMono(DataProcessingRequest.class)
                     .flatMap(this::handleProcessRequest))
 
             // Get task status and result
@@ -194,13 +196,13 @@ public class AsyncServiceApplication {
                     .bodyValue("Async Service is running"));
     }
 
-    private Mono<ServerResponse> handleProcessRequest(ProcessRequest request) {
+    private Mono<ServerResponse> handleProcessRequest(DataProcessingRequest request) {
         String taskId = "task-" + taskCounter.incrementAndGet();
 
         log.info("Received process request: {} - starting immediate processing", request.getData());
 
         // Start processing immediately for ALL requests
-        Mono<ProcessingResult> processingMono = startProcessing(request, taskId);
+        Mono<DataProcessingResult> processingMono = startProcessing(request, taskId);
 
         // Try to complete within 30 seconds, otherwise return handle
         return processingMono
@@ -220,7 +222,7 @@ public class AsyncServiceApplication {
                     log.info("Task {} exceeded {} second SLA, returning TaskResult for background processing", taskId, SLA_SECONDS);
 
                     // Store task for background continuation
-                    TaskResult taskResult = new TaskResult(taskId, TaskStatus.PROCESSING, (ProcessingResult) null,
+                    TaskResult taskResult = new TaskResult(taskId, TaskStatus.PROCESSING, (DataProcessingResult) null,
                         LocalDateTime.now(), request);
                     taskResults.put(taskId, taskResult);
 
@@ -244,7 +246,7 @@ public class AsyncServiceApplication {
     /**
      * Start processing immediately - this method simulates actual work
      */
-    private Mono<ProcessingResult> startProcessing(ProcessRequest request, String taskId) {
+    private Mono<DataProcessingResult> startProcessing(DataProcessingRequest request, String taskId) {
         return Mono.fromCallable(() -> {
             log.info("Starting processing for task: {}", taskId);
 
@@ -266,7 +268,7 @@ public class AsyncServiceApplication {
             }
 
             // Create a structured result object
-            ProcessingResult result = new ProcessingResult(
+            DataProcessingResult result = new DataProcessingResult(
                 request.getData().toUpperCase(),
                 "Data processed successfully",
                 System.currentTimeMillis(),
@@ -281,7 +283,7 @@ public class AsyncServiceApplication {
     /**
      * Continue processing in background after timeout
      */
-    private void continueProcessingInBackground(String taskId, Mono<ProcessingResult> originalProcessing) {
+    private void continueProcessingInBackground(String taskId, Mono<DataProcessingResult> originalProcessing) {
         originalProcessing
             .doOnSuccess(result -> {
                 // Update task result when background processing completes

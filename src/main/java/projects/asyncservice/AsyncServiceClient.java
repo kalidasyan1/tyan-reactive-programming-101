@@ -1,6 +1,10 @@
 package projects.asyncservice;
 
 import org.springframework.web.reactive.function.client.WebClient;
+import projects.asyncservice.models.DataProcessingRequest;
+import projects.asyncservice.models.DataProcessingResult;
+import projects.asyncservice.models.TaskResult;
+import projects.asyncservice.models.TaskStatus;
 import reactor.core.publisher.Flux;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,13 +37,16 @@ public class AsyncServiceClient {
         log.info("Complexity mapping: 1→6s, 3→18s, 5→30s, 7→42s, 10→60s\n");
 
         // Test different complexity levels to see both immediate and async responses
-        client.testProcessingRequest("Simple Task", 1);      // ~6s - should complete immediately
+        client.testProcessingRequest("Simple Task 1", 1);      // ~6s - should complete immediately
+        client.testProcessingRequest("Simple Task 2", 1);
         Thread.sleep(1000);
 
-        client.testProcessingRequest("Medium Task", 3);      // ~18s - should complete immediately
+        client.testProcessingRequest("Medium Task 2", 3);      // ~18s - should complete immediately
+        client.testProcessingRequest("Medium Task 2", 3);
         Thread.sleep(1000);
 
-        client.testProcessingRequest("Complex Task", 5);     // ~30s - may timeout to background
+        client.testProcessingRequest("Complex Task 1", 5);     // ~30s - may timeout to background
+        client.testProcessingRequest("Complex Task 2", 5);
         Thread.sleep(1000);
 
         client.testProcessingRequest("Very Complex Task", 7); // ~42s - will definitely timeout
@@ -54,7 +61,7 @@ public class AsyncServiceClient {
     public void testProcessingRequest(String data, int complexity) {
         log.info("--- TESTING PROCESSING REQUEST: {} (complexity: {}) ---", data, complexity);
 
-        ProcessRequest request = new ProcessRequest(data, complexity);
+        DataProcessingRequest request = new DataProcessingRequest(data, complexity);
 
         webClient.post()
             .uri("/api/process")
@@ -91,7 +98,7 @@ public class AsyncServiceClient {
 
     private void logProcessingResult(TaskResult taskResult) {
         if (taskResult.getResult() != null) {
-            ProcessingResult result = taskResult.getResult();
+            DataProcessingResult result = taskResult.getResult();
             log.info("   📋 Processed Data: {}", result.getProcessedData());
             log.info("   📝 Message: {}", result.getMessage());
             log.info("   ⏱️ Timestamp: {}", new java.util.Date(result.getTimestamp()));

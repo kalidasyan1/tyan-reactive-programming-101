@@ -1,5 +1,7 @@
-package projects.asyncservice;
+package projects.asyncservice.models;
 
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
@@ -9,18 +11,20 @@ import java.time.LocalDateTime;
  * Contains task status, results (when available), and metadata
  */
 @Data
+@Builder
 @NoArgsConstructor
+@AllArgsConstructor
 public class TaskResult {
     private String taskId;
     private TaskStatus status; // PROCESSING, COMPLETED, FAILED
-    private ProcessingResult result;  // ProcessingResult when completed, null when processing or failed
+    private DataProcessingResult result;  // ProcessingResult when completed, null when processing or failed
     private String errorMessage;     // Error message when status is FAILED
     private LocalDateTime createdAt;
     private LocalDateTime completedAt;
-    private ProcessRequest originalRequest;
+    private DataProcessingRequest originalRequest;
 
-    public TaskResult(String taskId, TaskStatus status, ProcessingResult result,
-                     LocalDateTime createdAt, ProcessRequest originalRequest) {
+    public TaskResult(String taskId, TaskStatus status, DataProcessingResult result,
+                     LocalDateTime createdAt, DataProcessingRequest originalRequest) {
         this.taskId = taskId;
         this.status = status;
         this.result = result;
@@ -30,7 +34,7 @@ public class TaskResult {
 
     // Convenience constructor for failed tasks
     public TaskResult(String taskId, TaskStatus status, String errorMessage,
-                     LocalDateTime createdAt, ProcessRequest originalRequest) {
+                     LocalDateTime createdAt, DataProcessingRequest originalRequest) {
         this.taskId = taskId;
         this.status = status;
         this.errorMessage = errorMessage;

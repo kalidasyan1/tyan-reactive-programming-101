@@ -111,38 +111,84 @@ Focus on Spring WebFlux internals:
 # 4. Project Reactor internals (Publisher-Subscriber, Schedulers, Context)
 mvn exec:java -Dexec.mainClass="com.example.reactor.ReactorInternals"
 
-# 5. WebClient implementation (HTTP clients, connection management)
+# 5. Multiple Subscribers & Timeout Patterns (Cold vs Hot streams)
+mvn exec:java -Dexec.mainClass="com.example.reactor.multiplesubscribers.BlockingTimeoutExample"
+mvn exec:java -Dexec.mainClass="com.example.reactor.multiplesubscribers.NonBlockingTimeoutExample"
+mvn exec:java -Dexec.mainClass="com.example.reactor.multiplesubscribers.HotStreamViaCacheExample"
+mvn exec:java -Dexec.mainClass="com.example.reactor.multiplesubscribers.HotStreamViaShareExample"
+mvn exec:java -Dexec.mainClass="com.example.reactor.multiplesubscribers.NonBlockingTimeoutExample2"
+
+# 6. WebClient implementation (HTTP clients, connection management)
 mvn exec:java -Dexec.mainClass="com.example.webclient.WebClientInternals"
 
-# 6. Spring WebFlux server (Web layer, functional routing)
+# 7. Spring WebFlux server (Web layer, functional routing)
 mvn spring-boot:run -Dstart-class="com.example.webflux.ReactiveWebApplication"
 ```
 
-### 🚀 Phase 3: Real Projects (60 minutes)
-Build production-ready applications:
+### 🔍 Phase 2.5: Advanced Reactor Patterns (30 minutes)
+Understanding multiple subscribers and timeout behavior:
 
-#### A. Async Service with Handle Pattern
+#### Multiple Subscribers & Cold vs Hot Streams
+These examples demonstrate critical concepts for building robust reactive applications:
+
 ```bash
-# Terminal 1: Start the service
-mvn spring-boot:run -Dstart-class="projects.asyncservice.AsyncServiceApplication"
-
-# Terminal 2: Test the service  
-mvn exec:java -Dexec.mainClass="projects.asyncservice.AsyncServiceClient"
+# Blocking operations with timeouts - interruption behavior
+mvn exec:java -Dexec.mainClass="com.example.reactor.multiplesubscribers.BlockingTimeoutExample"
 ```
+**What you'll learn:** Cold streams create independent executions per subscriber. Timeout on one subscriber interrupts its own thread but doesn't affect others.
 
-#### B. Reactive Chat Application
 ```bash
-# Terminal 1: Start chat server
-mvn spring-boot:run -Dstart-class="projects.chat.ReactiveChatApplication"
-
-# Open in browser: http://localhost:8082/chat.html
+# Non-blocking operations with timeouts - cancellation vs interruption  
+mvn exec:java -Dexec.mainClass="com.example.reactor.multiplesubscribers.NonBlockingTimeoutExample"
+mvn exec:java -Dexec.mainClass="com.example.reactor.multiplesubscribers.NonBlockingTimeoutExample2"
 ```
+**What you'll learn:** Non-blocking sources (CompletableFuture, Mono.delay) handle cancellation gracefully without thread interruption.
+
+```bash
+# Hot streams via cache() - shared execution
+mvn exec:java -Dexec.mainClass="com.example.reactor.multiplesubscribers.HotStreamViaCacheExample"
+```
+**What you'll learn:** `cache()` converts cold streams to hot - single execution shared among all subscribers. Late subscribers get cached results.
+
+```bash
+# Hot streams via share() - multicast behavior
+mvn exec:java -Dexec.mainClass="com.example.reactor.multiplesubscribers.HotStreamViaShareExample"
+```
+**What you'll learn:** `share()` multicasts to concurrent subscribers but late subscribers may miss emissions.
 
 ## Real-World Projects
 
 ### 🔄 Project A: Async Service with Handle Pattern
 
 **Problem Solved:** How to handle requests that might take a long time without blocking the server?
+
+**Two Implementation Approaches:**
+
+#### 1. Controller-Based Implementation (DataProcessingRequestController)
+- **Class**: `projects.asyncservice.ControllerBasedApplication`
+- **Controller**: `DataProcessingRequestController` 
+- **Approach**: Traditional Spring MVC style with `@RestController` annotations
+- **Key Innovation**: Solves timeout interruption issues with proper background processing isolation
+
+**Architecture Enhancement:**
+```
+Client Request → Background Processing (Cache) → Client Timeout Chain
+                         ↓                            ↓
+                Uninterrupted Execution    ≤30s: Direct Response
+                         ↓                 >30s: Handle + Polling
+                Background Completion
+```
+
+**Critical Fixes Applied:**
+- ✅ **No timeout interruption**: Background processing continues regardless of client timeouts
+- ✅ **No duplicate storage**: Single source of truth for result management  
+- ✅ **Thread-safe operations**: Proper concurrent access to shared task results
+- ✅ **Cache strategy**: Using `.cache()` to share execution without re-execution
+
+#### 2. Router Functions Implementation (Alternative)
+- **Class**: `projects.asyncservice.RouterFunctionsBasedApplication`
+- **Approach**: Functional routing with WebFlux handlers
+- **Use case**: When you prefer functional programming style over annotations
 
 **Solution Architecture:**
 ```
@@ -246,89 +292,99 @@ mvn exec:java -Dexec.mainClass="com.example.reactor.ReactorInternals"
 
 1. **Start the service** (Terminal 1):
 ```bash
-mvn spring-boot:run -Dstart-class="projects.asyncservice.AsyncServiceApplication"
+mvn spring-boot:run -Dstart-class="projects.asyncservice.ControllerBasedApplication"
 # Server starts on http://localhost:8081
 ```
 
-2. **Test with client** (Terminal 2):
+2. **Test quick completion** (Terminal 2):
 ```bash
-mvn exec:java -Dexec.mainClass="projects.asyncservice.AsyncServiceClient"
-# Watch quick vs long task handling
-```
-
-3. **Manual API testing**:
-```bash
-# Quick task (immediate response)
 curl -X POST http://localhost:8081/api/process \
   -H "Content-Type: application/json" \
   -d '{"data":"quick task","complexity":1}'
+```
+**Expected:** Immediate response with completed result
 
-# Long task (returns handle)
+3. **Test background processing** (Terminal 2):
+```bash
+# Send long task
 curl -X POST http://localhost:8081/api/process \
   -H "Content-Type: application/json" \
   -d '{"data":"long task","complexity":10}'
 
-# Check task status (replace task-1 with actual taskId)
-curl http://localhost:8081/api/tasks/task-1
+# You'll get a handle, then poll for results
+curl http://localhost:8081/api/status/{taskId}
 ```
+**Expected:** Handle response, then polling shows progression
 
 ### Testing the Chat Application
 
-1. **Start chat server**:
+1. **Start the chat server** (Terminal 1):
 ```bash
 mvn spring-boot:run -Dstart-class="projects.chat.ReactiveChatApplication"
 # Server starts on http://localhost:8082
 ```
 
-2. **Open web interface**: http://localhost:8082/chat.html
+2. **Open the web interface:**
+```
+http://localhost:8082/chat.html
+```
 
-3. **Test scenarios**:
-   - Enter username and click "Connect"
-   - Join a room (e.g., "general", "tech")  
-   - Send public messages
-   - Open multiple browser tabs to simulate different users
-   - Test private messaging
-   - Watch real-time presence updates
+3. **Test scenarios:**
+- Open multiple browser tabs
+- Use different usernames in each tab
+- Join different rooms
+- Send public and private messages
+- Watch real-time updates
 
-## Key Learnings Summary
+### Advanced Testing with Multiple Subscribers
 
-### 🎯 Core Reactive Patterns
-- **Asynchronous data streams**: Data flows through time
-- **Publisher-Subscriber**: Demand-driven data flow
-- **Backpressure**: Subscriber controls the pace
-- **Error handling**: Resilient stream processing
-- **Composition**: Building complex flows from simple operators
+```bash
+# Run each example and observe the console output
+mvn exec:java -Dexec.mainClass="com.example.reactor.multiplesubscribers.BlockingTimeoutExample"
+mvn exec:java -Dexec.mainClass="com.example.reactor.multiplesubscribers.HotStreamViaCacheExample"
+mvn exec:java -Dexec.mainClass="com.example.reactor.multiplesubscribers.HotStreamViaShareExample"
+```
 
-### 🛠️ Best Practices
-- Use `subscribeOn()` to control subscription thread
-- Use `publishOn()` to control emission thread  
-- Handle errors with `onErrorResume()`, `retry()`
-- Prefer composition over imperative code
-- Use appropriate schedulers (boundedElastic for I/O, parallel for CPU)
-- Implement proper backpressure handling
-
-### 🚀 Production Considerations
-- Connection pooling for HTTP clients
-- Proper error handling and circuit breakers
-- Monitoring and observability
-- Resource management and cleanup
-- Performance testing under load
-
-## Troubleshooting
-
-### Common Issues
-1. **Dependencies**: If Maven isn't available, use your IDE to run the examples
-2. **Port conflicts**: Ensure ports 8080, 8081, 8082 are available
-3. **WebSocket issues**: Check browser developer console for connection errors
-4. **Performance**: Monitor memory usage with large streams
-
-### Next Steps
-- Explore Spring Security reactive support
-- Learn about R2DBC for reactive database access
-- Study reactive testing with reactor-test
-- Investigate reactive messaging with RSocket
-- Practice with more complex streaming scenarios
+**What to observe:**
+- Thread names and execution patterns
+- How timeouts affect different subscriber types
+- Cache vs Share behavior differences
+- Background processing continuation
 
 ---
 
-🎉 **Congratulations!** You now have a comprehensive understanding of reactive programming with Spring WebFlux and Project Reactor - the dominant reactive framework in the Java ecosystem.
+## 🎓 Learning Outcomes
+
+After completing this guide, you'll understand:
+
+### ✅ Reactive Programming Fundamentals
+- Publisher-Subscriber pattern and backpressure
+- Hot vs Cold streams and when to use each
+- Operator chains and composition patterns
+- Error handling and recovery strategies
+
+### ✅ Spring WebFlux Production Patterns
+- Building non-blocking web applications
+- Handling long-running operations gracefully
+- WebSocket integration for real-time features
+- Testing reactive applications
+
+### ✅ Advanced Reactor Techniques
+- Multiple subscriber scenarios and timeout handling
+- Cache vs Share operators for performance
+- Background processing with proper isolation
+- Thread-safe reactive patterns
+
+### ✅ Real-World Architecture
+- Microservice communication patterns
+- Event-driven system design
+- Resource management and connection pooling
+- Production monitoring and debugging
+
+## 🚀 Next Steps
+
+1. **Explore the codebase** - Each example includes detailed comments
+2. **Modify the examples** - Change parameters and observe behavior
+3. **Build your own project** - Apply these patterns to your use cases
+4. **Read the documentation** - [Project Reactor Reference](https://projectreactor.io/docs)
+5. **Join the community** - [Spring WebFlux Community](https://spring.io/community)

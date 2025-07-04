@@ -1,5 +1,6 @@
-package projects.asyncservice;
+package projects.asyncservice.models;
 
+import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
@@ -11,7 +12,8 @@ import lombok.AllArgsConstructor;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class ProcessingResult {
+@Builder
+public class DataProcessingResult {
     private String processedData;
     private String message;
     private long timestamp;
