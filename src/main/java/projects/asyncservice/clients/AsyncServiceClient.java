@@ -1,5 +1,6 @@
-package projects.asyncservice;
+package projects.asyncservice.clients;
 
+import java.util.List;
 import org.springframework.web.reactive.function.client.WebClient;
 import projects.asyncservice.models.DataProcessingRequest;
 import projects.asyncservice.models.DataProcessingResult;
@@ -11,6 +12,8 @@ import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+
+
 
 /**
  * Client for testing the Async Service
@@ -37,25 +40,38 @@ public class AsyncServiceClient {
         log.info("Complexity mapping: 1→6s, 3→18s, 5→30s, 7→42s, 10→60s\n");
 
         // Test different complexity levels to see both immediate and async responses
-        client.testProcessingRequest("Simple Task 1", 1);      // ~6s - should complete immediately
-        client.testProcessingRequest("Simple Task 2", 1);
+        client.testProcessingRequest("Simple Task", 1);      // ~6s - should complete immediately
         Thread.sleep(1000);
 
-        client.testProcessingRequest("Medium Task 2", 3);      // ~18s - should complete immediately
-        client.testProcessingRequest("Medium Task 2", 3);
+        client.testProcessingRequest("Medium Task", 3);      // ~18s - should complete immediately
         Thread.sleep(1000);
 
-        client.testProcessingRequest("Complex Task 1", 5);     // ~30s - may timeout to background
-        client.testProcessingRequest("Complex Task 2", 5);
+        client.testProcessingRequest("Complex Task", 5);     // ~30s - may timeout to background
         Thread.sleep(1000);
 
         client.testProcessingRequest("Very Complex Task", 7); // ~42s - will definitely timeout
         Thread.sleep(1000);
 
         client.testProcessingRequest("Maximum Task", 10);    // ~60s - will definitely timeout
+        Thread.sleep(1000);
+
+        client.testListTasks(); // List all tasks to see current state
 
         // Keep the client running to see results
         Thread.sleep(100000); // Wait for potentially long tasks to complete
+    }
+
+    private void testListTasks() {
+        log.info("=== TESTING LIST TASKS ===");
+
+        webClient.get()
+            .uri("/api/task/list")
+            .retrieve()
+            .bodyToMono(List.class)
+            .subscribe(
+                tasks -> log.info("✓ Current tasks: {}", tasks),
+                error -> log.error("✗ Error listing tasks: {}", error.getMessage())
+            );
     }
 
     public void testProcessingRequest(String data, int complexity) {
@@ -120,7 +136,7 @@ public class AsyncServiceClient {
                 log.info("   🔍 Polling for task: {} (attempt {})", taskId, tick + 1))
             .flatMap(tick ->
                 webClient.get()
-                    .uri("/api/tasks/{taskId}", taskId)
+                    .uri("/api/task/result/{taskId}", taskId)
                     .retrieve()
                     .bodyToMono(TaskResult.class)
                     .onErrorReturn(createErrorTaskResult(taskId, "Polling failed"))

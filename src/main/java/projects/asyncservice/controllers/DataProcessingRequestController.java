@@ -2,9 +2,7 @@ package projects.asyncservice.controllers;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
-import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeoutException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -20,6 +18,8 @@ import projects.asyncservice.models.TaskStatus;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
+import static projects.asyncservice.controllers.TaskController.*;
+
 
 /**
  * Controller for handling process requests
@@ -28,14 +28,12 @@ import reactor.core.scheduler.Schedulers;
  */
 @Slf4j
 @RestController
-@RequestMapping("/api")
+@RequestMapping("/api/process")
 public class DataProcessingRequestController {
-
-  private static final Map<String, TaskResult> taskResults = new ConcurrentHashMap<>();
 
   private static final int SLA_SECONDS = 30;
 
-  @PostMapping("/process")
+  @PostMapping
   public Mono<ResponseEntity<TaskResult>> handleRequest(@RequestBody DataProcessingRequest request) {
     log.info("Received process request: {} - starting immediate processing", request.getData());
     String taskId = UUID.randomUUID().toString();
@@ -53,6 +51,7 @@ public class DataProcessingRequestController {
           log.info("Task {} completed within {} seconds SLA", taskId, SLA_SECONDS);
           return ResponseEntity.ok(getTaskResultFromCache(taskId));
         })
+        .doOnSuccess(TaskController::removeTaskResultFromCache)
         .onErrorResume(throwable -> {
           if (throwable instanceof TimeoutException) {
             // Client timeout - but background processing continues!

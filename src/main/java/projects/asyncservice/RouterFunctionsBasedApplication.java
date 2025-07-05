@@ -5,6 +5,7 @@ import java.time.Duration;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.TimeoutException;
 import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.web.reactive.function.server.RouterFunction;
 import org.springframework.web.reactive.function.server.ServerResponse;
 import org.springframework.web.reactive.function.server.RequestPredicates;
@@ -153,7 +154,7 @@ import reactor.core.scheduler.Schedulers;
  * - GET  /api/tasks          → List all task IDs (debugging)
  * - GET  /api/health         → Service health check
  */
-//@SpringBootApplication
+@SpringBootApplication
 public class RouterFunctionsBasedApplication {
 
     private static final Logger log = LoggerFactory.getLogger(RouterFunctionsBasedApplication.class);
@@ -179,14 +180,14 @@ public class RouterFunctionsBasedApplication {
                     .flatMap(this::handleProcessRequest))
 
             // Get task status and result
-            .andRoute(RequestPredicates.GET("/api/tasks/{taskId}"),
+            .andRoute(RequestPredicates.GET("/api/task/result/{taskId}"),
                 request -> {
                     String taskId = request.pathVariable("taskId");
                     return getTaskResult(taskId);
                 })
 
             // List all tasks (for demo purposes)
-            .andRoute(RequestPredicates.GET("/api/tasks"),
+            .andRoute(RequestPredicates.GET("/api/task/list"),
                 request -> ServerResponse.ok()
                     .bodyValue(taskResults.keySet()))
 
